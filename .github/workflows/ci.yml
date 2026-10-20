@@ -33,8 +33,8 @@ jobs:
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Install stable Rust tools
-        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+      - name: Install pinned Rust tools
+        run: rustup toolchain install 1.99.0-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
       - name: Locked tests, lint, desktop build and real IPC smoke
         run: ./scripts/ci-checks.ps1
       - name: Collect development build evidence
@@ -63,8 +63,8 @@ jobs:
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Install stable Rust
-        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.0-x86_64-pc-windows-msvc --profile minimal
       - name: Install pinned audit and SBOM tools
         run: |
           cargo install cargo-deny --version 0.20.2 --locked

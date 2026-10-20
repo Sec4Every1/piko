@@ -26,8 +26,10 @@ try {
 
     Invoke-PikoCheck cargo @('fmt', '--all', '--', '--check') 'format.txt'
     Invoke-PikoCheck cargo @('fmt', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--', '--check') 'format.txt'
+    Invoke-PikoCheck powershell.exe @('-NoProfile', '-File', 'scripts/tests/Test-PikoService.Tests.ps1') 'service-preflight-tests.txt'
+    Invoke-PikoCheck pwsh @('-NoProfile', '-File', 'scripts/tests/Test-PikoService.Tests.ps1') 'service-preflight-tests.txt'
     Invoke-PikoCheck cargo @('clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings') 'clippy.txt'
-    Invoke-PikoCheck cargo @('test', '--workspace', '--locked') 'rust-tests.txt'
+    Invoke-PikoCheck cargo @('test', '--workspace', '--locked', '--', '--show-output') 'rust-tests.txt'
     Invoke-PikoCheck cargo @('build', '--workspace', '--release', '--locked') 'rust-build.txt'
     Invoke-PikoCheck cargo @('run', '--release', '--locked', '-p', 'piko-event-storage', '--example', 'storage_bench') 'storage-benchmark.txt'
 

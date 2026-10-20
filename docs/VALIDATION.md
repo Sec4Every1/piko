@@ -25,3 +25,24 @@ Release runtime and desktop builds passed. No real account changes are performed
 by these tests. CI corrections preserve the wildcard dependency prohibition and
 add explicit internal package versions; remote dependency audit is not rerun here.
 Packaging instructions no longer embed the packager's Windows SID.
+
+## 2026-10-20: pinned toolchain and installation qualification gate
+
+Rust1.99.0/MSVC is pinned for local, CI and release builds. Desktop all-target
+Clippy passed with this version. The first remote checkpoint ed11d96 passed core
+lint and dependency policy but exposed two platform-dependent native test
+assumptions and an invalid cargo-deny option position for the desktop audit.
+
+Native tests now assert elevated-caller denial and explicit raw/decode-failure
+fallback only for a confirmed absent TDH schema (OS1168). Start-v0 decoding stays
+mandatory; Windows Server2022 cannot qualify Windows11-only event versions.
+Targeted local tests: seven ETW and three process tests passed on a normal token;
+elevated-denial branch remains to verify on the CI token. CI records passing-test
+output to retain these coverage diagnostics. Production access guards are unchanged.
+
+Test-PikoService.ps1 validates all installed executable hashes and an optional
+expected package before any service lifecycle operation. Its -ReadOnly mode was
+covered by nine benign mocked checks on both PowerShell7 and Windows PowerShell5.1.
+On this machine it refused an installed service/manifest hash mismatch and left
+the service running. The refreshed package differs from installed binaries;
+upgrade/reboot/uninstall qualification remains incomplete. No live update occurred.

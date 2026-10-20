@@ -97,3 +97,18 @@ La dashboard release incorpora HTML/CSS/JavaScript e non richiede un server loca
 
 Compress-PikoArchive.ps1 (PowerShell amministratore) ricomprime lo storico a servizio fermo con backup protetto prima delle modifiche. Rifiuta identità SCM o directory dati inattese; controlla lo spazio per backup e margine WAL. Piko verifica prima e dopo il conteggio e la catena. Il file SQLite resta allocato, ma riusa pagine liberate. Backup conservato in ProgramData\\piko\\before-compression-*; richiede spazio aggiuntivo, fuori dal budget operativo SQLite. Non è una retention né una cancellazione automatica. Usare una build compatibile: precedenti versioni senza codec non leggono le nuove evidenze.
 
+
+## Verifica prima di un aggiornamento
+
+Da una cartella del pacchetto aggiornato, `Test-PikoService.ps1 -ReadOnly -ExpectedPackagePath .`
+confronta gli hash di tutti e quattro gli eseguibili, controlla la configurazione
+SCM e lo stato del runtime. La modalità ReadOnly non avvia né riavvia il servizio.
+Un numero versione uguale non basta a provare che i binari siano aggiornati.
+Un errore di hash richiede di conservare ed esaminare i file: non correggere il
+manifest per nascondere la differenza. Questo controllo non implementa l'upgrade;
+la migrazione dell'installazione resta un requisito separato.
+
+Le build di sviluppo e CI usano il toolchain Rust MSVC fissato in
+`rust-toolchain.toml` (1.99.0). L'installazione di questo toolchain affiancato non
+cambia il toolchain globale: evita differenze involontarie di compilatore e lint
+fra PC e runner. Gli aggiornamenti del toolchain richiedono verifica esplicita.

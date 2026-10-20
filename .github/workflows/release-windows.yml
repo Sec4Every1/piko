@@ -24,8 +24,8 @@ jobs:
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Install stable Rust tools
-        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+      - name: Install pinned Rust tools
+        run: rustup toolchain install 1.99.0-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
       - name: Build Windows services and CLI
         run: cargo build --workspace --release --locked
       - name: Install and validate desktop dependencies

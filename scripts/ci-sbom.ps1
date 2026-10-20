@@ -34,7 +34,8 @@ try {
     Invoke-PikoDependencyCheck cargo @('deny', '--version') 'tools.txt'
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--version') 'tools.txt'
     Invoke-PikoDependencyCheck cargo @('deny', '--locked', '--target', 'x86_64-pc-windows-msvc', 'check') 'rust-core-audit.txt'
-    Invoke-PikoDependencyCheck cargo @('deny', '--locked', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--target', 'x86_64-pc-windows-msvc', 'check', '--config', 'deny.toml') 'rust-desktop-audit.txt'
+    # cargo-deny common options must precede the check subcommand.
+    Invoke-PikoDependencyCheck cargo @('deny', '--locked', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--target', 'x86_64-pc-windows-msvc', '--config', 'deny.toml', 'check') 'rust-desktop-audit.txt'
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
 

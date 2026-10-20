@@ -198,7 +198,7 @@ mod live_tests {
         }
     }
     #[test]
-    fn only_exact_owned_benign_instance_is_stopped() -> io::Result<()> {
+    fn exact_owned_instance_is_stopped_or_elevated_caller_is_denied() -> io::Result<()> {
         let dir = std::env::temp_dir().join(format!("piko-process-test-{}", std::process::id()));
         std::fs::create_dir(&dir)?;
         let path = dir.join("benign-fixture.exe");
@@ -217,14 +217,49 @@ mod live_tests {
                 .spawn()?,
         );
         let handle = open(child.0.id(), false)?;
-        let target = inspect(&handle, child.0.id())?;
-        assert!(preview(target.pid, "1").is_err());
-        let mut wrong = target.clone();
-        wrong.creation_filetime = "1".into();
-        assert!(terminate(&wrong).is_err());
-        assert!(child.0.try_wait()?.is_none());
-        assert!(terminate(&target)?);
-        assert!(child.0.wait()?.code().is_some());
+        if crate::current_process_elevated()? {
+            // An untrusted target must not bypass the elevation guard in terminate.
+            let target = ProcessTarget {
+                pid: child.0.id(),
+                creation_filetime: "1".into(),
+                executable: path.to_string_lossy().into_owned(),
+                name: "benign-fixture.exe".into(),
+                sid: String::new(),
+                session_id: 0,
+            };
+            for (operation, result) in [
+                ("inspect", inspect(&handle, target.pid).map(|_| ())),
+                ("preview", preview(target.pid, "1").map(|_| ())),
+                ("terminate", terminate(&target).map(|_| ())),
+            ] {
+                let error = match result {
+                    Err(error) => error,
+                    Ok(()) => {
+                        return Err(io::Error::other(format!(
+                            "Elevated {operation} was unexpectedly permitted"
+                        )));
+                    }
+                };
+                assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+                assert_eq!(error.to_string(), "Use the normal user interface");
+            }
+            assert!(child.0.try_wait()?.is_none());
+            eprintln!(
+                "Process-control coverage: elevated caller denied by inspect/preview/terminate and child remained alive; successful normal-user termination is not qualified under this token"
+            );
+        } else {
+            let target = inspect(&handle, child.0.id())?;
+            assert!(preview(target.pid, "1").is_err());
+            let mut wrong = target.clone();
+            wrong.creation_filetime = "1".into();
+            assert!(terminate(&wrong).is_err());
+            assert!(child.0.try_wait()?.is_none());
+            assert!(terminate(&target)?);
+            assert!(child.0.wait()?.code().is_some());
+            eprintln!(
+                "Process-control coverage: normal-user exact-instance termination and stale-instance denial qualified"
+            );
+        }
         drop(handle);
         drop(child);
         std::fs::remove_file(path)?;
