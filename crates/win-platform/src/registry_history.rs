@@ -85,9 +85,10 @@ fn decode(kind: u32, bytes: &[u8]) -> Option<String> {
     if ![REG_SZ, REG_EXPAND_SZ].contains(&kind) || !bytes.len().is_multiple_of(2) {
         return None;
     }
-    let mut units = bytes
-        .chunks_exact(2)
-        .map(|x| u16::from_le_bytes([x[0], x[1]]))
+    let (chunks, _) = bytes.as_chunks::<2>();
+    let mut units = chunks
+        .iter()
+        .map(|chunk| u16::from_le_bytes(*chunk))
         .collect::<Vec<_>>();
     while units.last() == Some(&0) {
         units.pop();

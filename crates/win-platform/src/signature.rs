@@ -99,7 +99,7 @@ pub fn verify_local(file: &File, path: &str) -> io::Result<Option<&'static str>>
     if unsafe { CryptCATCatalogInfoFromContext(catalog.handle, &mut info, 0) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    if !info.wszCatalogFile.iter().any(|c| *c == 0) {
+    if !info.wszCatalogFile.contains(&0) {
         return Err(io::Error::other("Unterminated catalog path"));
     }
     let member_tag: String = hash.iter().map(|b| format!("{b:02X}")).collect();

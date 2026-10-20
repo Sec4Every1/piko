@@ -702,9 +702,10 @@ fn parse_unicode(bytes: &[u8]) -> io::Result<String> {
             "invalid ETW Unicode length",
         ));
     }
-    let units: Vec<_> = bytes
-        .chunks_exact(2)
-        .map(|v| u16::from_le_bytes([v[0], v[1]]))
+    let (chunks, _) = bytes.as_chunks::<2>();
+    let units: Vec<_> = chunks
+        .iter()
+        .map(|chunk| u16::from_le_bytes(*chunk))
         .collect();
     if units.last() != Some(&0) || units[..units.len() - 1].contains(&0) {
         return Err(io::Error::new(
