@@ -1,0 +1,33 @@
+/target/
+**/target/
+**/node_modules/
+**/dist/
+/.runtime/
+/.build/
+/artifacts/
+**/.npm-cache/
+**/src-tauri/gen/
+
+*.db
+*.db-shm
+*.db-wal
+*.log
+**/test-results/
+**/playwright-report/
+
+
+# Local publication artifacts and credentials
+.env
+.env.*
+*.pfx
+*.p12
+*.cer
+*.key
+*.pem
+*.zip
+*.sha256
+
+# Local evidence and machine-specific data
+/runtime/
+/publication-private/
+

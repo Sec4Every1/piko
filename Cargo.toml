@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/common-model",
+  "crates/event-schema",
+  "crates/event-fabric",
+  "crates/event-storage",
+  "crates/win-platform",
+  "crates/win-sensors",
+  "crates/ipc",
+  "crates/security-core",
+  "crates/response-engine",
+  "crates/app-control",
+  "apps/network-helper",
+  "apps/security-service",
+  "apps/cli",
+]
+exclude = ["apps/desktop-ui/src-tauri", "fuzz"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+

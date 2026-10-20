@@ -1,0 +1,17 @@
+[package]
+name = "piko-event-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
+piko-security-core = { path = "../security-core" }
+piko-event-schema = { path = "../event-schema" }
+rusqlite = { version = "0.40.2", features = ["fallible_uint", "bundled", "hooks"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+time = { version = "0.3", features = ["std"] }
+uuid = { version = "1", features = ["v4", "serde"] }

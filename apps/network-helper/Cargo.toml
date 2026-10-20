@@ -1,0 +1,12 @@
+[package]
+name = "piko-network-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+piko-app-control = { path = "../../crates/app-control" }
+piko-win-platform = { path = "../../crates/win-platform" }
+
+[lints]
+workspace = true

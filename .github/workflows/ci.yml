@@ -1,0 +1,84 @@
+name: piko windows checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: piko-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      # Full commits verified against their upstream release pages on 2026-10-04.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Install stable Rust tools
+        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+      - name: Locked tests, lint, desktop build and real IPC smoke
+        run: ./scripts/ci-checks.ps1
+      - name: Collect development build evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: piko-windows-development-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            .build/ci/
+            apps/desktop-ui/test-results/
+            target/release/piko.exe
+            target/release/piko-service.exe
+            apps/desktop-ui/src-tauri/target/release/piko-desktop.exe
+
+  dependencies:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Install stable Rust
+        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+      - name: Install pinned audit and SBOM tools
+        run: |
+          cargo install cargo-deny --version 0.20.2 --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Audit both Rust dependency graphs and npm; generate SBOMs
+        run: ./scripts/ci-sbom.ps1
+      - name: Collect dependency evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: piko-dependency-evidence-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: .build/dependencies/

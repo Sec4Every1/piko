@@ -1,0 +1,14 @@
+<script lang="ts">
+ import { saveAlertReview, type AlertReview, type ReviewState } from './api';
+ import type { Language } from './i18n';
+ import { formatTime } from './format';
+ let {alertId,review,language,onSaved}:{alertId:string;review?:AlertReview;language:Language;onSaved:(value:AlertReview)=>void}=$props();
+ const it=$derived(language==='it');
+ let disposition=$state<ReviewState>('open'),note=$state(''),busy=$state(false),error=$state('');
+ let loadedKey='';
+ $effect(()=>{const key=alertId+':'+(review?.updated_at??0);if(key!==loadedKey){loadedKey=key;disposition=review?.state??'open';note=review?.note??'';}});
+ const size=$derived(new TextEncoder().encode(note).length);
+ async function save(){busy=true;error='';try{onSaved(await saveAlertReview(alertId,disposition,note));}catch(e){error=String(e);}finally{busy=false;}}
+</script>
+<section class="review-panel" aria-label={it?'La tua valutazione':'Your review'}><h4>{it?'La tua valutazione':'Your review'}</h4><p>{it?'Annotazione manuale per questo evento: non cambia score, regole o evidenza. “Atteso” non significa falso positivo accertato.':'Manual annotation for this event: it does not change score, rules or evidence. “Expected” does not mean a confirmed false positive.'}</p><label>{it?'Stato di revisione':'Review status'}<select aria-label={it?'Stato di revisione':'Review status'} bind:value={disposition} disabled={busy}><option value="open">{it?'Da esaminare':'To review'}</option><option value="investigating">{it?'In verifica':'Investigating'}</option><option value="expected">{it?'Atteso / autorizzato':'Expected / authorized'}</option><option value="handled">{it?'Gestito':'Handled'}</option></select></label><label>{it?'Nota personale':'Personal note'}<textarea bind:value={note} disabled={busy} maxlength="1000" rows="2"></textarea></label><div class="review-actions"><span>{size}/1000 byte</span><button class="button primary" disabled={busy||size>1000} onclick={save}>{busy ? (it?'Salvataggio…':'Saving…') : (it?'Salva valutazione':'Save review')}</button></div>{#if review}<small>{it?'Ultimo salvataggio':'Last saved'}: {formatTime(review.updated_at,language)} · {review.reviewer_sid}</small>{/if}{#if error}<p role="alert">{error}</p>{/if}</section>
+<style>.review-panel{margin:18px 0;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--surface-subtle)}h4{font-size:.85rem;font-weight:500}p,small{font-size:.72rem;color:var(--muted);line-height:1.6}label{display:grid;gap:5px;font-size:.72rem;margin-top:12px}textarea{font:inherit;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;color:var(--text);background:var(--surface);width:100%;resize:vertical;max-height:180px}.review-actions{display:flex;align-items:center;justify-content:space-between;margin:10px 0;font-size:.7rem;color:var(--muted)}small{overflow-wrap:anywhere}</style>

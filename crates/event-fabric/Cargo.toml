@@ -1,0 +1,13 @@
+[package]
+name = "piko-event-fabric"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = "1"
+piko-event-schema = { path = "../event-schema" }
+thiserror = "2"
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }

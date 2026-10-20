@@ -1,0 +1,29 @@
+[package]
+name = "piko-security-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "piko-service"
+path = "src/main.rs"
+
+[dependencies]
+piko-security-core = { path = "../../crates/security-core" }
+piko-response-engine = { path = "../../crates/response-engine" }
+piko-common-model = { path = "../../crates/common-model" }
+piko-event-schema = { path = "../../crates/event-schema" }
+piko-event-storage = { path = "../../crates/event-storage" }
+piko-event-fabric = { path = "../../crates/event-fabric" }
+piko-win-platform = { path = "../../crates/win-platform" }
+piko-win-sensors = { path = "../../crates/win-sensors" }
+piko-ipc = { path = "../../crates/ipc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1.49", features = ["rt", "macros", "net", "io-util", "time", "signal", "sync"] }
+
+[lints]
+workspace = true
+

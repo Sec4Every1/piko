@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_name": "TEST/DEVELOPMENT ONLY - synthetic example, no real security advice",
+  "source_url": "https://example.org/development-only",
+  "generated_at": 1767225600,
+  "expires_at": 1767312000,
+  "products": [{ "product_id": "test:legacy-editor", "display_name": "Synthetic legacy editor - development only", "covered_versions": ["1.0", "2.0"] }],
+  "advisories": [{
+    "id": "TEST-EOL-1", "product_id": "test:legacy-editor", "affected_versions": ["1.0"], "kind": "end_of_support",
+    "title": "Synthetic end-of-support example", "summary": "Development fixture only. No real software product or vulnerability is represented.",
+    "cvss_x100": null, "cvss_version": null, "cvss_vector": null,
+    "source_url": "https://example.org/development-only/TEST-EOL-1", "published_at": 1767225600,
+    "remediation": ["Development-only example: evaluate a supported replacement.", "Development-only example: review network and sandbox options separately."]
+  }]
+}

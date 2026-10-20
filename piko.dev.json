@@ -1,0 +1,7 @@
+{
+  "data_dir": ".runtime",
+  "heartbeat_seconds": 5,
+  "flush_seconds": 15,
+  "max_disk_mib": 256,
+  "queue_capacity": 256
+}

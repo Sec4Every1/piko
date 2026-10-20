@@ -1,0 +1,17 @@
+import { describe,it,expect } from 'vitest';
+import { parseAdvisories, validAdvisorySource, advisoryLevel, type AdvisorySnapshot } from './advisories';
+const fixture=():AdvisorySnapshot=>({checked_at:150,inventory_complete:true,unbound_count:0,
+  feed:{source_name:'Test-only feed',source_url:'https://example.org/advisories',generated_at:100,expires_at:200,imported_at:110,sha256:'a'.repeat(64),advisory_count:1,product_count:1,products:[{product_id:'test:editor',display_name:'Test editor',covered_versions:['1.0']}],stale:false,authenticity:'not_verified'},
+  entries:[{binding:{application_id:'test-id',application_name:'Test editor',publisher:'Test vendor',installer_version:'1.0',product_id:'test:editor',exact_version:'1.0',bound_at:120},state:'matched',advisory_count:1}],
+  advisories:[{id:'TEST-1',product_id:'test:editor',affected_versions:['1.0'],kind:'vulnerability',title:'Synthetic vulnerability',summary:'Browser/unit test data only',cvss_x100:750,cvss_version:'3.1',cvss_vector:'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',source_url:'https://example.org/TEST-1',published_at:99,remediation:['Test-only manual action']}]});
+describe('offline advisory response',()=>{
+  it('accepts a coherent source-declared match and keeps stale findings',()=>{const f=fixture();expect(parseAdvisories(f).entries[0].advisory_count).toBe(1);f.checked_at=201;f.feed!.stale=true;expect(parseAdvisories(f).entries[0].state).toBe('matched');});
+  it('accepts empty configuration without fabricated results',()=>{expect(parseAdvisories({checked_at:150,inventory_complete:false,unbound_count:7,feed:null,entries:[],advisories:[]}).feed).toBeNull();});
+  it('rejects mismatched product/count/time/authenticity and absent feed',()=>{
+    for(const change of [(f:AdvisorySnapshot)=>f.entries[0].binding.product_id='other:product',(f:AdvisorySnapshot)=>f.entries[0].advisory_count=2,(f:AdvisorySnapshot)=>f.feed!.stale=true,(f:AdvisorySnapshot)=>f.feed=null,(f:AdvisorySnapshot)=>f.feed!.authenticity='verified' as 'not_verified']) {const f=fixture();change(f);expect(()=>parseAdvisories(f)).toThrow();}
+  });
+  it('rejects unknown or non-HTTPS sources without interpreting names',()=>{for(const url of ['http://example.org/','https://example.org@evil.org/','https://127.0.0.1/','https://example.org:443/','https://example.org/%0a','file:///C:/test','https://example.org\\bad'])expect(validAdvisorySource(url)).toBe(false);expect(validAdvisorySource('https://vendor.example.org/security?id=TEST-1')).toBe(true);});
+  it('preserves unknown CVSS and rejects score-only/malformed vectors',()=>{const f=fixture();f.advisories[0].cvss_x100=null;f.advisories[0].cvss_version=null;f.advisories[0].cvss_vector=null;expect(advisoryLevel(parseAdvisories(f).advisories[0])).toBe('unknown');f.advisories[0].cvss_x100=750;expect(()=>parseAdvisories(f)).toThrow();});
+  it('exposes severity bands as indices, including zero',()=>{const a=fixture().advisories[0];for(const [score,expected] of [[0,'none'],[100,'low'],[400,'medium'],[700,'high'],[900,'critical']] as const)expect(advisoryLevel({...a,cvss_x100:score})).toBe(expected);});
+  it('bounds response metadata, versions and binding count',()=>{const f=fixture();f.entries=Array.from({length:513},(_,n)=>({...f.entries[0],binding:{...f.entries[0].binding,application_id:`test-${n}`}}));expect(()=>parseAdvisories(f)).toThrow();const g=fixture();g.advisories[0].remediation=['x'.repeat(513)];expect(()=>parseAdvisories(g)).toThrow();});
+});

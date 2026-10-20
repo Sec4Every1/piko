@@ -1,0 +1,14 @@
+[package]
+name = "piko-security-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+piko-event-schema = { path = "../event-schema" }
+quick-xml = "0.42"
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["serde"] }
+
+sha2 = "0.10"
+time = { version = "0.3", features = ["parsing"] }

@@ -1,0 +1,21 @@
+[package]
+name = "piko-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "piko"
+path = "src/main.rs"
+
+[dependencies]
+piko-ipc = { path = "../../crates/ipc" }
+piko-event-storage = { path = "../../crates/event-storage" }
+serde_json = "1"
+tokio = { version = "1.49", features = ["rt", "macros", "net", "time"] }
+
+[lints]
+workspace = true
+
+[dependencies.piko-app-control]
+path = "../../crates/app-control"

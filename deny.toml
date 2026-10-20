@@ -1,0 +1,24 @@
+# Dependency policy, not a statement that an audit has already passed.
+# Each new license or advisory exception requires a documented review.
+[advisories]
+db-urls = ["https://github.com/RustSec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.95
+allow = [
+    "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "MIT", "BSD-2-Clause",
+    "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "Unicode-DFS-2016",
+    "CC0-1.0", "BSL-1.0", "Unlicense",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

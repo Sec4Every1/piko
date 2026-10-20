@@ -1,0 +1,20 @@
+[package]
+name = "piko-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+piko-security-core = { path = "../security-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde"] }
+tokio = { version = "1.49", features = ["net", "io-util", "rt", "time"] }
+piko-win-platform = { path = "../win-platform" }
+piko-common-model = { path = "../common-model" }
+piko-event-schema = { path = "../event-schema" }
+piko-event-storage = { path = "../event-storage" }
+
+[lints]
+workspace = true
+

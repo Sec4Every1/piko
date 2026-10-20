@@ -1,0 +1,55 @@
+name: piko Windows release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Install stable Rust tools
+        run: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+      - name: Build Windows services and CLI
+        run: cargo build --workspace --release --locked
+      - name: Install and validate desktop dependencies
+        working-directory: apps/desktop-ui
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build desktop application
+        working-directory: apps/desktop-ui
+        run: npm run tauri -- build --no-bundle --ci -- --locked
+      - name: Assemble installable package and checksums
+        run: |
+          $package = & ./scripts/package.ps1 -Profile release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          $workspaceVersion = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
+          if ($tagVersion -ne $workspaceVersion) { throw "Release tag $tagVersion does not match workspace version $workspaceVersion." }
+          $archive = Join-Path $PWD "artifacts/piko-$($env:GITHUB_REF_NAME)-windows-x64.zip"
+          Compress-Archive -Path (Join-Path $package '*') -DestinationPath $archive -Force
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$archive.sha256", "$hash  $(Split-Path -Leaf $archive)`n", [Text.UTF8Encoding]::new($false))
+      - name: Publish source-linked Windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME "artifacts/piko-$($env:GITHUB_REF_NAME)-windows-x64.zip" "artifacts/piko-$($env:GITHUB_REF_NAME)-windows-x64.zip.sha256" --repo $env:GITHUB_REPOSITORY --title "piko $env:GITHUB_REF_NAME" --generate-notes

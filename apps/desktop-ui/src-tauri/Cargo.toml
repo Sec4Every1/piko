@@ -1,0 +1,32 @@
+[package]
+name = "piko-desktop"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+piko-app-control = { path = "../../../crates/app-control" }
+piko-security-core = { path = "../../../crates/security-core" }
+piko-win-platform = { path = "../../../crates/win-platform" }
+tauri = { version = "2", features = [] }
+piko-ipc = { path = "../../../crates/ipc" }
+piko-common-model = { path = "../../../crates/common-model" }
+piko-event-schema = { path = "../../../crates/event-schema" }
+piko-event-storage = { path = "../../../crates/event-storage" }
+
+[workspace]
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+
+[dependencies.serde_json]
+version = "1"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]

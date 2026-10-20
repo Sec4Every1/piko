@@ -1,0 +1,38 @@
+<script lang="ts">
+  import type { Language } from './i18n';
+  import { registryHistory, safeRegistryText as safe, type RegistryHistory, type RegistryChange } from './registryHistory';
+  import { downloadJson } from './format';
+  let { language }: { language:Language } = $props();
+  const it = $derived(language==='it');
+  let history=$state<RegistryHistory|null>(null), busy=$state(false), error=$state(''), search=$state(''), page=$state(0), cursors=$state<(number|null)[]>([null]);
+  const filtered=$derived((history?.entries??[]).filter(e=>`${e.after?.value_name??e.before?.value_name} ${e.after?.scope_id??e.before?.scope_id}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())));
+  const pages=$derived(Math.max(1,Math.ceil(filtered.length/5))), visible=$derived(filtered.slice(Math.min(page,pages-1)*5,(Math.min(page,pages-1)+1)*5));
+  const date=(t:number)=>new Date(t).toLocaleString(it?'it-IT':'en-GB');
+  const label=(e:RegistryChange)=>({appeared:it?'Nuovo valore osservato':'New value observed',reappeared:it?'Valore osservato di nuovo':'Value observed again',changed:it?'Valore cambiato':'Value changed',not_observed:it?'Valore non più osservato':'Value no longer observed'}[e.kind]);
+  async function load(reset=false,older=false) {
+    if(busy)return; busy=true;error='';
+    const next=reset?[null]:older&&history?.entries.length?[...cursors,history.entries.at(-1)!.sequence]:cursors.slice(0,-1);
+    try { history=await registryHistory(next.at(-1)??null);cursors=next.length?next:[null];page=0; } catch(e){error=String(e);} finally{busy=false;}
+  }
+  function exportHistory(){try{downloadJson(JSON.stringify({product:'piko',kind:'observed_startup_registry_history',export_schema_version:1,history,integrity:'unsigned_export'},null,2),'events');}catch(e){error=String(e);}}
+</script>
+<details class="registry-panel" ontoggle={e=>{if(e.currentTarget.open&&!history&&!busy&&!error)void load(true);}}>
+  <summary>{it?'Registro: avvio automatico':'Registry: automatic startup'}</summary>
+  <p>{it?'Confronta Run e RunOnce di questo utente e del computer nelle viste 32/64 bit, aprendo o aggiornando questa sezione. Il nome identifica un valore, non il programma autore.':'Compares this user’s and the computer’s Run and RunOnce values in 32/64-bit views when opened or refreshed. Names identify values, not the acting program.'}</p>
+  <div class="toolbar"><label>{it?'Cerca nelle 50 variazioni caricate':'Search 50 loaded changes'}<input type="search" bind:value={search} maxlength="200" oninput={()=>page=0}/></label><button class="button secondary small" disabled={busy} onclick={()=>load(true)}>{it?'Aggiorna registro':'Refresh registry'}</button><button class="text-button" disabled={busy||!history||!!error} onclick={exportHistory}>{it?'Esporta lettura':'Export reading'}</button></div>
+  {#if busy}<p role="status">{it?'Lettura…':'Reading…'}</p>{/if}
+  {#if error}<p class="warning" role="alert">{it?'Lettura non aggiornata.':'Reading not refreshed.'} {error}</p>{/if}
+  {#if history}
+    <p class="reading">{it?'Prima osservazione':'First observation'}: {date(history.first_observed_at)} · {it?'Ultima lettura':'Last reading'}: {date(history.observed_at)}</p>
+    {#if history.scopes.some(s=>!s.complete)}<p class="warning">{it?'Lettura parziale: i valori assenti nelle chiavi incomplete non vengono segnati come scomparsi.':'Partial reading: missing values in incomplete keys are not marked absent.'}</p>{/if}
+    {#if !filtered.length}<p>{history.entries.length?(it?'Nessuna corrispondenza nella lettura caricata.':'No match in loaded reading.'):(it?'Nessuna variazione osservata. La prima lettura crea il riferimento iniziale.':'No changes observed. The first reading creates the baseline.')}</p>{/if}
+    {#each visible as entry(entry.sequence)}<article><div class="heading"><strong>{safe((entry.after??entry.before)!.value_name)||(it?'Valore predefinito':'Default value')}</strong><span>{label(entry)}</span></div><small>{date(entry.observed_at)}</small><details><summary>{it?'Confronta prima e dopo':'Compare before and after'}</summary><p class="reading"><code>{safe((entry.after??entry.before)!.scope_id)}</code></p><div class="comparison">{#each [entry.before,entry.after] as v,i}<div><b>{i===0?(it?'Prima':'Before'):(it?'Dopo':'After')}</b><p>{v?(v.text!==null?safe(v.text):(it?'Dato binario: apri il grezzo':'Binary data: open raw')):(it?'Non osservato':'Not observed')}</p>{#if v}<small>{it?'Tipo Windows':'Windows type'}: {v.value_type}</small>{/if}</div>{/each}</div><p>{it?'L’ora è quella della lettura. Autore e momento della scrittura non disponibili. Verifica che il comando sia previsto prima di modificare l’avvio automatico.':'Time is the reading time. Writer and write time are unavailable. Check the command is expected before changing automatic startup.'}</p><details><summary>{it?'Dati grezzi (esadecimale)':'Raw data (hexadecimal)'}</summary><pre>{JSON.stringify({before:entry.before,after:entry.after},null,2)}</pre></details></details></article>{/each}
+    {#if pages>1}<div class="pager"><button class="text-button" disabled={page===0||busy} onclick={()=>page--}>{it?'Precedenti':'Previous'}</button><span>{Math.min(page,pages-1)+1}/{pages}</span><button class="text-button" disabled={page>=pages-1||busy} onclick={()=>page++}>{it?'Successive':'Next'}</button></div>{/if}
+    <div class="pager"><button class="text-button" disabled={busy||cursors.length<2} onclick={()=>load()}>{it?'Più recenti':'Newer'}</button><button class="text-button" disabled={busy||!history.has_more} onclick={()=>load(false,true)}>{it?'Carica più vecchie':'Load older'}</button></div>
+    <details><summary>{it?'Copertura della lettura':'Reading coverage'}</summary>{#each history.scopes as scope}<p><code>{scope.id}</code> · {scope.complete?(it?'Completa':'Complete'):(it?'Parziale':'Partial')} {scope.warnings.map(safe).join(' · ')}</p>{/each}</details>
+  {/if}
+  <p class="reading">{it?'Conserva le ultime 500 variazioni (16 MiB, 1024 identità). Nessuna scrittura al registro. Le variazioni tra due letture possono sfuggire; un’assenza non prova una cancellazione.':'Retains the latest 500 changes (16 MiB, 1024 identities). No registry writes. Changes between readings can be missed; absence does not prove deletion.'}</p>
+</details>
+<style>
+.registry-panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;min-width:0}summary{cursor:pointer;font-size:.85rem}p{color:var(--muted);font-size:.8rem;margin:12px 0;overflow-wrap:anywhere}.toolbar,.pager,.heading{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between}.toolbar{margin:18px 0}label{flex:1;display:grid;gap:8px;font-size:.76rem;min-width:160px}input{width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:10px;background:var(--surface);color:var(--text)}article{padding:15px 0;border-top:1px solid var(--border)}strong{font-size:.86rem;overflow-wrap:anywhere}.heading span{font-size:.72rem;color:var(--accent-ink);background:var(--accent-soft);border-radius:12px;padding:5px 8px}small,.reading{font-size:.72rem;color:var(--muted)}article details{margin-top:12px}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:.8rem}.comparison>div{min-width:0}.pager{margin:16px 0;font-size:.75rem}.warning{color:var(--warning);background:var(--warning-surface);padding:12px;border-radius:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.72rem;background:var(--surface-alt);padding:12px;border-radius:10px}code{unicode-bidi:plaintext} @media(max-width:650px){.comparison{grid-template-columns:1fr}.registry-panel{padding:18px}}
+</style>

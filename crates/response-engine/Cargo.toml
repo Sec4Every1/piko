@@ -1,0 +1,14 @@
+[package]
+name = "piko-response-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+piko-security-core = { path = "../security-core" }
+piko-win-platform = { path = "../win-platform" }
+rusqlite = { version = "0.40.2", features = ["fallible_uint", "bundled"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+
