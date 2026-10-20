@@ -9,8 +9,8 @@ name = "piko"
 path = "src/main.rs"
 
 [dependencies]
-piko-ipc = { path = "../../crates/ipc" }
-piko-event-storage = { path = "../../crates/event-storage" }
+piko-ipc = { version = "0.2.0", path = "../../crates/ipc" }
+piko-event-storage = { version = "0.2.0", path = "../../crates/event-storage" }
 serde_json = "1"
 tokio = { version = "1.49", features = ["rt", "macros", "net", "time"] }
 
@@ -18,4 +18,5 @@ tokio = { version = "1.49", features = ["rt", "macros", "net", "time"] }
 workspace = true
 
 [dependencies.piko-app-control]
+version = "0.2.0"
 path = "../../crates/app-control"

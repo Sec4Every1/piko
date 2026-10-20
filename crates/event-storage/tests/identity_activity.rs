@@ -8,13 +8,15 @@ fn identity_filter_and_cursor_precede_limit_and_preserve_original_archive(
     let path = std::env::temp_dir().join(format!("piko-identity-{}.db", Uuid::new_v4()));
     let mut store = SqliteEventStore::open(path, StorageConfig::default())?;
     let runtime = Uuid::new_v4();
-    for sequence in 1..=30 {
-        let id = if sequence % 3 == 0 {
-            4624
-        } else if sequence % 3 == 1 {
-            4648
-        } else {
-            5156
+    for sequence in 1..=70 {
+        let id = match sequence % 7 {
+            0 => 4624,
+            1 => 4648,
+            2 => 5156,
+            3 => 4720,
+            4 => 4722,
+            5 => 4725,
+            _ => 4726,
         };
         let mut e = SecurityEvent::heartbeat(store.host_id(), runtime, sequence, 1000, 1);
         e.sensor_id = "windows.event_log.Security".into();
@@ -51,7 +53,7 @@ fn identity_filter_and_cursor_precede_limit_and_preserve_original_archive(
             break;
         }
     }
-    assert_eq!(seen.len(), 20);
+    assert_eq!(seen.len(), 60);
     assert!(seen.windows(2).all(|p| p[0] > p[1]));
     let page = store.authentication_activity(&AuthenticationQuery {
         kind: Some(AuthenticationKind::SuccessfulLogon),
@@ -62,6 +64,20 @@ fn identity_filter_and_cursor_precede_limit_and_preserve_original_archive(
         .records
         .iter()
         .all(|r| r.kind == AuthenticationKind::SuccessfulLogon));
+    for kind in [
+        AuthenticationKind::AccountCreated,
+        AuthenticationKind::AccountEnabled,
+        AuthenticationKind::AccountDisabled,
+        AuthenticationKind::AccountDeleted,
+    ] {
+        let page = store.authentication_activity(&AuthenticationQuery {
+            kind: Some(kind),
+            ..Default::default()
+        })?;
+        assert_eq!(page.records.len(), 5);
+        assert!(page.records.iter().all(|row| row.kind == kind));
+        assert!(page.next_before.is_some());
+    }
     assert!(store
         .authentication_activity(&AuthenticationQuery {
             limit: 21,

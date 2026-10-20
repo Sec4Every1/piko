@@ -12,6 +12,23 @@ function Invoke-PikoDependencyCheck {
     if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
 
+function Get-PikoSbomDirectories {
+    param([string]$Root)
+    foreach ($pikoManifest in @('Cargo.toml', 'apps/desktop-ui/src-tauri/Cargo.toml')) {
+        $pikoMetadataJson = & cargo metadata --locked --no-deps --format-version 1 --manifest-path (Join-Path $Root $pikoManifest)
+        if ($LASTEXITCODE -ne 0) { throw "Cargo metadata failed: $pikoManifest" }
+        $pikoMetadata = $pikoMetadataJson | ConvertFrom-Json
+        foreach ($pikoPackage in $pikoMetadata.packages) {
+            if ($pikoPackage.id -notin $pikoMetadata.workspace_members) { continue }
+            $pikoDirectory = [IO.Path]::GetRelativePath($Root, (Split-Path -Parent $pikoPackage.manifest_path)).Replace('\', '/')
+            if ([IO.Path]::IsPathRooted($pikoDirectory) -or $pikoDirectory -eq '..' -or $pikoDirectory.StartsWith('../')) {
+                throw "Workspace package is outside the repository: $($pikoPackage.name)"
+            }
+            $pikoDirectory
+        }
+    }
+}
+
 Push-Location $pikoRoot
 try {
     Invoke-PikoDependencyCheck cargo @('deny', '--version') 'tools.txt'
@@ -21,7 +38,7 @@ try {
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
 
-    $pikoManifests = @('crates/common-model', 'crates/event-schema', 'crates/event-fabric', 'crates/event-storage', 'crates/win-platform', 'crates/ipc', 'apps/security-service', 'apps/cli', 'apps/desktop-ui/src-tauri')
+    $pikoManifests = @(Get-PikoSbomDirectories -Root $pikoRoot | Sort-Object -Unique)
     foreach ($pikoDirectory in $pikoManifests) {
         $pikoBom = Join-Path $pikoRoot "$pikoDirectory/bom.json"
         if (-not (Test-Path -LiteralPath $pikoBom)) { throw "Expected SBOM is missing: $pikoDirectory/bom.json" }

@@ -16,6 +16,41 @@ fn fixture(id: u32, version: u32, data: &str) -> (SecurityEvent, RawEvidence) {
 }
 const FIELDS: &str = r#"<Data Name="SubjectUserName">requester</Data><Data Name="SubjectDomainName">PC</Data><Data Name="SubjectUserSid">S-1-5-18</Data><Data Name="SubjectLogonId">0x3e7</Data><Data Name="TargetUserName">alice</Data><Data Name="TargetDomainName">DOMAIN</Data><Data Name="TargetUserSid">S-1-5-21-1</Data><Data Name="TargetLogonId">0xABCD</Data><Data Name="LogonType">10</Data><Data Name="ProcessId">0xaa4</Data><Data Name="ProcessName">C:\Windows\System32\svchost.exe</Data><Data Name="IpAddress">192.0.2.10</Data>"#;
 #[test]
+fn account_management_uses_target_sid_and_never_invents_caller_or_logon() {
+    for (id, kind) in [
+        (4720, AuthenticationKind::AccountCreated),
+        (4722, AuthenticationKind::AccountEnabled),
+        (4725, AuthenticationKind::AccountDisabled),
+        (4726, AuthenticationKind::AccountDeleted),
+    ] {
+        let fields = format!("{FIELDS}<Data Name=\"TargetSid\">S-1-5-21-42</Data>");
+        let (event, raw) = fixture(id, 0, &fields);
+        let context = authentication_context(&event, Some(&raw));
+        assert_eq!(
+            AuthenticationKind::from_event_type(&event.event_type),
+            Some(kind)
+        );
+        assert_eq!(context.evidence_status, "verified");
+        assert_eq!(context.account.sid.as_deref(), Some("S-1-5-21-42"));
+        assert_eq!(context.account.name.as_deref(), Some("alice"));
+        assert_eq!(context.subject.name.as_deref(), Some("requester"));
+        assert_eq!(context.logon_id.as_deref(), Some("0x3e7"));
+        assert!(context.caller_pid.is_none());
+        assert!(context.caller_path.is_none());
+        assert!(context.address.is_none());
+        assert!(context.logon_type.is_none());
+        let (event, raw) = fixture(id, 0, FIELDS);
+        assert!(authentication_context(&event, Some(&raw))
+            .account
+            .sid
+            .is_none());
+        let (event, raw) = fixture(id, 1, &fields);
+        let unsupported = authentication_context(&event, Some(&raw));
+        assert_eq!(unsupported.evidence_status, "unsupported_version");
+        assert!(unsupported.account.name.is_none());
+    }
+}
+#[test]
 fn reviewed_versions_keep_account_subject_and_payload_pid_separate() {
     for version in 0..=3 {
         let (e, r) = fixture(4624, version, FIELDS);

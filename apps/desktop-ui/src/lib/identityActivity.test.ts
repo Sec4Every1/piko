@@ -15,3 +15,13 @@ describe('authentication activity boundary',()=>{
   const rows=Array.from({length:5},(_,i)=>({...row,position:10-i,event:{...event,event_id:`event-${i}`}}));expect(parseAuthenticationPage({records:rows,next_before:6}).next_before).toBe(6);
  });
 });
+
+it('accepts account lifecycle categories only with the corresponding event ID',()=>{
+ for(const [kind,id] of [['account_created',4720],['account_enabled',4722],['account_disabled',4725],['account_deleted',4726]] as const){
+  const record={...row,kind,event:{...event,event_type:`windows.event_log.${id}`}};
+  expect(parseAuthenticationPage({records:[record],next_before:null},null,kind).records[0].kind).toBe(kind);
+  expect(authenticationMeaning(kind,'it')).toContain('Windows registra');
+  expect(authenticationMeaning(kind,'en')).toContain('Windows recorded');
+  expect(()=>parseAuthenticationPage({records:[{...record,event}],next_before:null})).toThrow();
+ }
+});

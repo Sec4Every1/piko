@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 serde_json = "1"
-piko-event-schema = { path = "../event-schema" }
+piko-event-schema = { version = "0.2.0", path = "../event-schema" }
 thiserror = "2"
 
 [dev-dependencies]

@@ -10,6 +10,7 @@ test('identity activity is lazy, five rows per page, filtered before pagination,
    if(command==='process_actions')return[];
    if(command==='get_observations')return{started_at_unix_ms:Date.now(),completed_at_unix_ms:Date.now(),process_complete:true,network_complete:true,udp_complete:true,warnings:[],processes:[],connections:[],udp_endpoints:[]};
    if(command==='authentication_activity'){
+    if(args?.filter?.kind==='account_created')return{records:[{position:7,kind:'account_created',event:{...event(7),event_type:'windows.event_log.4720'},context:{evidence_status:'verified',account:{name:'new-user',domain:'PC',sid:'S-1-5-21-42'},subject:{name:'operator',domain:'PC',sid:'S-1-5-21-41'},logon_type:null,logon_id:'0x3e7',address:null,workstation:null,caller_path:null,caller_pid:null,target_server:null,authentication_package:null,privileges:[]}}],next_before:null};
     if(args?.filter?.kind==='failed_logon')return{records:[],next_before:null};
     const older=args?.filter?.before_position!==null;const entries=older?[1]:[6,5,4,3,2];
     return{records:entries.map(n=>({position:n,kind:'explicit_credentials',event:event(n),context:{evidence_status:'verified',account:{name:`alice-${n}`,domain:'PC',sid:null},subject:{name:null,domain:null,sid:null},logon_type:null,logon_id:'0x3e7',address:'192.0.2.10',workstation:null,caller_path:'C:\\Windows\\System32\\svchost.exe',caller_pid:42,target_server:'server',authentication_package:null,privileges:[]}})),next_before:older?null:2};
@@ -27,5 +28,15 @@ test('identity activity is lazy, five rows per page, filtered before pagination,
  await panel.getByRole('button',{name:'Apri evento e dati grezzi'}).first().click();await expect(page.getByRole('dialog')).toBeVisible();
  await page.getByRole('dialog').getByRole('button',{name:'Leggi evidenza originale',exact:true}).click();await expect(page.locator('.source-evidence')).toContainText('identity fixture');
  await page.getByRole('dialog').getByRole('button',{name:'Chiudi',exact:true}).click();await panel.getByLabel('Categoria accessi',{exact:true}).selectOption('failed_logon');await expect(panel.locator('.content>ul>li')).toHaveCount(0);await expect(panel.getByText('Non dimostra assenza di accessi',{exact:false})).toBeVisible();
+ await panel.getByLabel('Categoria accessi',{exact:true}).selectOption('account_created');
+ await expect(panel.locator('.content>ul>li')).toHaveCount(1);
+ await expect(panel.getByText('PC\\new-user',{exact:true})).toBeVisible();
+ await panel.locator('.record-details>summary').click();
+ await expect(panel.getByText('PC\\operator',{exact:true})).toBeVisible();
+ await expect(panel.getByText('Windows registra la creazione',{exact:false})).toBeVisible();
+ await expect(panel.getByText('Programma chiamante riportato',{exact:true})).toHaveCount(0);
+ await panel.getByRole('button',{name:'Apri evento e dati grezzi'}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await page.getByRole('dialog').getByRole('button',{name:'Chiudi',exact:true}).click();
  const journal=page.locator('.process-journal');await journal.locator('summary').first().click();await expect(journal.getByText('Nessuna operazione registrata.',{exact:true})).toBeVisible();
 });

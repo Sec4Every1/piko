@@ -409,7 +409,7 @@ mod tests {
         assert!(std::fs::rename(&path, root.join("moved.exe")).is_err());
         assert!(std::fs::rename(&root, root.with_extension("moved")).is_err());
         drop(executable);
-        std::fs::write(&path, [b'M', b'Z'])?;
+        std::fs::write(&path, b"MZ")?;
         assert!(inspect_executable(path.to_str().ok_or_else(|| invalid("Test path"))?).is_err());
         std::fs::remove_file(&path)?;
         std::fs::remove_dir(&root)?;

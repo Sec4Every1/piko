@@ -1,6 +1,6 @@
 # Tracciabilita dei 116 requisiti
 
-Aggiornamento: 14 ottobre 2026. Questa matrice non dichiara completato il prodotto.
+Aggiornamento: 20 ottobre 2026. Questa matrice non dichiara completato il prodotto.
 Le righe sono sezioni della specifica, ciascuna contiene piu criteri di accettazione.
 Parziale significa codice funzionante per una porzione; non implementato significa nessun percorso completo disponibile.
 Le decisioni architetturali da sole non contano come implementazione.
@@ -36,7 +36,7 @@ checkpoint firmati o garanzia di 12 mesi per qualsiasi volume entro 2 GB.
 | 31 | DECOY DATA | Non implementato | docs/REQUIREMENTS.md, sezione 31 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 33 | DESTINATION REPUTATION | Non implementato | docs/REQUIREMENTS.md, sezione 33 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 35 | DNS / ENCRYPTED TRAFFIC INTELLIGENCE | Non implementato | docs/REQUIREMENTS.md, sezione 35 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
-| 36 | IDENTITY ENGINE | Parziale | crates/security-core/src/authentication.rs; identity_activity.rs; crates/event-storage; ADR 0024/0031 | Correlazione 4625 e fatti XML 4624/4625/4648/4672, account/subject/PID distinti, categorie/cursore, cinque righe, dettagli/raw e verifiche manuali. Audit/accesso Security richiesti; niente token lineage, identity graph, protezione credenziali, causalità o blocco account. |
+| 36 | IDENTITY ENGINE | Parziale | crates/security-core/src/authentication.rs; identity_activity.rs; crates/event-storage; ADR 0024/0031 | Correlazione 4625 e fatti XML 4624/4625/4648/4672 e ciclo account 4720/4722/4725/4726 (ADR 0033), account/subject/PID distinti, categorie/cursore, cinque righe, dettagli/raw e verifiche manuali. Audit/accesso Security richiesti; niente token lineage, identity graph, protezione credenziali, causalità o blocco account. |
 | 37 | TOKEN LINEAGE | Non implementato | docs/REQUIREMENTS.md, sezione 37 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 38 | PRIVILEGE TRANSITIONS | Non implementato | docs/REQUIREMENTS.md, sezione 38 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 39 | ACCOUNT CREATION POLICY | Non implementato | docs/REQUIREMENTS.md, sezione 39 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |

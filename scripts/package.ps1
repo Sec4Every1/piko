@@ -28,9 +28,7 @@ Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination (Join-Pat
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\INSTALLATION.md') -Destination (Join-Path $destination 'LEGGIMI.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\RESPONSE.md') -Destination (Join-Path $destination 'RESPONSE.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\MANUALE_UTENTE.md') -Destination (Join-Path $destination 'MANUALE_UTENTE.md') -Force
-$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$command = '& .\Install-Piko.ps1 -ViewerSid ' + "'$sid'"
-[IO.File]::WriteAllText((Join-Path $destination 'INSTALL-COMMAND.txt'), "Aprire PowerShell come amministratore in questa cartella e lanciare:`r`n$command`r`n", (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText((Join-Path $destination 'INSTALL-COMMAND.txt'), "Fare doppio clic su Install-Piko.cmd in questa cartella e confermare la richiesta Windows.`r`nL'installer rileva automaticamente l'utente sul PC di destinazione.`r`n", (New-Object Text.UTF8Encoding($false)))
 Write-Output $destination
 
 

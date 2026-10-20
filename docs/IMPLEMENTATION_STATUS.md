@@ -4,6 +4,11 @@ Piko is an early-stage Windows security-monitoring prototype. It is not a comple
 
 ## Implemented areas
 
+2026-10-20: account activity includes creation, enabling, disabling and deletion
+(Security 4720/4722/4725/4726, version 0), with affected/requesting identities,
+paged filters and original evidence. These are observed historical facts;
+account policy enforcement remains unimplemented. See ADR 0033.
+
 The repository contains a Windows service, desktop UI, CLI, local event store, event-log and selected ETW collectors, application inventory, event grouping and MITRE ATT&CK mappings. It also includes user-confirmed workflows for selected file recovery/quarantine and per-executable network rules, plus an installer and uninstall scripts. Availability depends on Windows permissions and policy.
 
 The dashboard separates grouped, human-readable alerts from event details and raw records. Its 0–100 score is an explainable heuristic; it is not a calibrated probability that an alert is a false positive or a measure of overall system risk.

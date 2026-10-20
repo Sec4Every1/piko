@@ -7,9 +7,9 @@ license.workspace = true
 [dependencies]
 serde_json = "1"
 sha2 = "0.10"
-piko-event-schema = { path = "../event-schema" }
-piko-common-model = { path = "../common-model" }
-piko-win-platform = { path = "../win-platform" }
+piko-event-schema = { version = "0.2.0", path = "../event-schema" }
+piko-common-model = { version = "0.2.0", path = "../common-model" }
+piko-win-platform = { version = "0.2.0", path = "../win-platform" }
 quick-xml = "0.42"
 time = { version = "0.3", features = ["parsing"] }
 uuid = { version = "1", features = ["v4"] }

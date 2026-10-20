@@ -1,5 +1,9 @@
 # Architecture & Language Audit
 
+Delta 2026-10-20 — ADR 0033: account lifecycle facts reuse the safe Rust XML
+validator, SQLite query and Svelte activity panel. KEEP existing languages;
+no new collector, FFI, Windows permission or dependency.
+
 Delta 2026-10-14 — ADR 0031: fatti di autenticazione da evidenze esistenti in
 security-core safe Rust; snapshot/cursore nel worker SQLite, API IPC readonly e
 vista Svelte compatta. Nessun sensore, FFI, privilegio o migrazione aggiunto.

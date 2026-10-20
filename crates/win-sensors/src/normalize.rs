@@ -85,7 +85,8 @@ impl EventMetadata {
                                 }
                             }
                             "Level" => {
-                                if level.replace(value.parse::<u8>()?).is_some() {
+                                let previous_level = level.replace(value.parse::<u8>()?);
+                                if previous_level.is_some() {
                                     return Err("duplicate level".into());
                                 }
                             }
@@ -212,6 +213,10 @@ mod tests {
             "<EventID Qualifiers=\"16384\">7036</EventID>",
             "<EventID>1</EventID><EventID>2</EventID>"
         ))
+        .is_err());
+        assert!(EventMetadata::parse(
+            &XML.replace("<Level>4</Level>", "<Level>4</Level><Level>2</Level>")
+        )
         .is_err());
         assert!(EventMetadata::parse(&format!("<!DOCTYPE Event>{XML}")).is_err());
         let seed = SecurityEvent::heartbeat(Uuid::new_v4(), Uuid::new_v4(), 1, 1000, 1);

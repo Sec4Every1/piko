@@ -11,6 +11,10 @@ pub enum AuthenticationKind {
     FailedLogon,
     ExplicitCredentials,
     SpecialPrivileges,
+    AccountCreated,
+    AccountEnabled,
+    AccountDisabled,
+    AccountDeleted,
 }
 impl AuthenticationKind {
     pub fn event_type(self) -> &'static str {
@@ -19,6 +23,10 @@ impl AuthenticationKind {
             Self::FailedLogon => "windows.event_log.4625",
             Self::ExplicitCredentials => "windows.event_log.4648",
             Self::SpecialPrivileges => "windows.event_log.4672",
+            Self::AccountCreated => "windows.event_log.4720",
+            Self::AccountEnabled => "windows.event_log.4722",
+            Self::AccountDisabled => "windows.event_log.4725",
+            Self::AccountDeleted => "windows.event_log.4726",
         }
     }
     pub fn from_event_type(value: &str) -> Option<Self> {
@@ -27,6 +35,10 @@ impl AuthenticationKind {
             Self::FailedLogon,
             Self::ExplicitCredentials,
             Self::SpecialPrivileges,
+            Self::AccountCreated,
+            Self::AccountEnabled,
+            Self::AccountDisabled,
+            Self::AccountDeleted,
         ]
         .into_iter()
         .find(|kind| kind.event_type() == value)
@@ -85,10 +97,24 @@ pub fn authentication_context(
             })
             .cloned()
     };
+    let management = matches!(
+        AuthenticationKind::from_event_type(&event.event_type),
+        Some(
+            AuthenticationKind::AccountCreated
+                | AuthenticationKind::AccountEnabled
+                | AuthenticationKind::AccountDisabled
+                | AuthenticationKind::AccountDeleted
+        )
+    );
     let identity = |prefix: &str| AuthenticationIdentity {
         name: get(&format!("{prefix}UserName")),
         domain: get(&format!("{prefix}DomainName")),
-        sid: get(&format!("{prefix}UserSid")).filter(|value| {
+        sid: get(&if management && prefix == "Target" {
+            "TargetSid".into()
+        } else {
+            format!("{prefix}UserSid")
+        })
+        .filter(|value| {
             value.starts_with("S-1-")
                 && value != "S-1-0-0"
                 && value.len() <= 184
@@ -117,7 +143,7 @@ pub fn authentication_context(
         evidence_status: "verified".into(),
         account,
         subject: identity("Subject"),
-        logon_type: if special || explicit {
+        logon_type: if special || explicit || management {
             None
         } else {
             get("LogonType").and_then(|v| v.parse().ok())
@@ -127,18 +153,20 @@ pub fn authentication_context(
             .and_then(hex_number)
             .filter(|n| *n != 0)
             .map(|n| format!("0x{n:x}")),
-        address: (!special)
+        address: (!special && !management)
             .then(|| get("IpAddress"))
             .flatten()
             .and_then(|v| v.parse::<std::net::IpAddr>().ok())
             .map(|v| v.to_string()),
-        workstation: if special || explicit {
+        workstation: if special || explicit || management {
             None
         } else {
             get("WorkstationName")
         },
-        caller_path: (!special).then(|| get("ProcessName")).flatten(),
-        caller_pid: (!special)
+        caller_path: (!special && !management)
+            .then(|| get("ProcessName"))
+            .flatten(),
+        caller_pid: (!special && !management)
             .then(|| get("ProcessId"))
             .flatten()
             .as_deref()
@@ -150,7 +178,7 @@ pub fn authentication_context(
         } else {
             None
         },
-        authentication_package: if special || explicit {
+        authentication_package: if special || explicit || management {
             None
         } else {
             get("AuthenticationPackageName")

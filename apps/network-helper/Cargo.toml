@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-piko-app-control = { path = "../../crates/app-control" }
-piko-win-platform = { path = "../../crates/win-platform" }
+piko-app-control = { version = "0.2.0", path = "../../crates/app-control" }
+piko-win-platform = { version = "0.2.0", path = "../../crates/win-platform" }
 
 [lints]
 workspace = true

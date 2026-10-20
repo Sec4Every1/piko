@@ -9,15 +9,15 @@ name = "piko-service"
 path = "src/main.rs"
 
 [dependencies]
-piko-security-core = { path = "../../crates/security-core" }
-piko-response-engine = { path = "../../crates/response-engine" }
-piko-common-model = { path = "../../crates/common-model" }
-piko-event-schema = { path = "../../crates/event-schema" }
-piko-event-storage = { path = "../../crates/event-storage" }
-piko-event-fabric = { path = "../../crates/event-fabric" }
-piko-win-platform = { path = "../../crates/win-platform" }
-piko-win-sensors = { path = "../../crates/win-sensors" }
-piko-ipc = { path = "../../crates/ipc" }
+piko-security-core = { version = "0.2.0", path = "../../crates/security-core" }
+piko-response-engine = { version = "0.2.0", path = "../../crates/response-engine" }
+piko-common-model = { version = "0.2.0", path = "../../crates/common-model" }
+piko-event-schema = { version = "0.2.0", path = "../../crates/event-schema" }
+piko-event-storage = { version = "0.2.0", path = "../../crates/event-storage" }
+piko-event-fabric = { version = "0.2.0", path = "../../crates/event-fabric" }
+piko-win-platform = { version = "0.2.0", path = "../../crates/win-platform" }
+piko-win-sensors = { version = "0.2.0", path = "../../crates/win-sensors" }
+piko-ipc = { version = "0.2.0", path = "../../crates/ipc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

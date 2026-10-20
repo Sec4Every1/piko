@@ -43,7 +43,7 @@ impl SqliteEventStore {
         } else {
             None
         };
-        let mut query=self.connection.prepare("SELECT position,payload FROM events WHERE sensor_id='windows.event_log.Security' AND event_type IN ('windows.event_log.4624','windows.event_log.4625','windows.event_log.4648','windows.event_log.4672') AND (?1 IS NULL OR position<?1) AND (?2 IS NULL OR event_type=?2) ORDER BY position DESC LIMIT ?3")?;
+        let mut query=self.connection.prepare("SELECT position,payload FROM events WHERE sensor_id='windows.event_log.Security' AND event_type IN ('windows.event_log.4624','windows.event_log.4625','windows.event_log.4648','windows.event_log.4672','windows.event_log.4720','windows.event_log.4722','windows.event_log.4725','windows.event_log.4726') AND (?1 IS NULL OR position<?1) AND (?2 IS NULL OR event_type=?2) ORDER BY position DESC LIMIT ?3")?;
         let mut rows = query.query(params![
             filter.before_position,
             filter.kind.map(|kind| kind.event_type()),

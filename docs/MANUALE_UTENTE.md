@@ -635,9 +635,10 @@ Piko non elimina evidenze recenti per liberare spazio: con retention attiva scad
 
 ## Registro e accessi falliti
 
-In **Attività applicazioni → Accessi, credenziali e privilegi**, apri il pannello
+In **Attività applicazioni → Account, accessi e privilegi**, apri il pannello
 per leggere gli eventi Security già conservati: accessi riusciti/falliti, tentativi
-con credenziali esplicite e assegnazione di privilegi. Mostra cinque righe per
+con credenziali esplicite, assegnazione di privilegi e account creati, abilitati,
+disabilitati o eliminati (4720/4722/4725/4726). Mostra cinque righe per
 pagina; Categoria accessi filtra prima del limite. Più vecchi/Più recenti naviga
 lo storico; Aggiorna torna alle osservazioni più recenti.
 

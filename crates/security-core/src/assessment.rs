@@ -447,9 +447,13 @@ pub(crate) fn authentication_fields(
         // the named fields we use retain their v2 types. RemoteCredentialGuard
         // was added and is deliberately not interpreted here.
         "windows.event_log.4624" => ["0", "1", "2", "3"].contains(&version.as_str()),
-        "windows.event_log.4625" | "windows.event_log.4648" | "windows.event_log.4672" => {
-            version == "0"
-        }
+        "windows.event_log.4625"
+        | "windows.event_log.4648"
+        | "windows.event_log.4672"
+        | "windows.event_log.4720"
+        | "windows.event_log.4722"
+        | "windows.event_log.4725"
+        | "windows.event_log.4726" => version == "0",
         _ => false,
     };
     if !supported {
