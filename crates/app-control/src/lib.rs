@@ -33,6 +33,7 @@ pub enum NetworkAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkPlan {
+    pub origin: piko_win_platform::network_elevation::NetworkPlanOrigin,
     #[serde(default)]
     pub direction: piko_win_platform::network_control::NetworkDirection,
     pub id: Uuid,
@@ -260,6 +261,7 @@ impl Controller {
             .ok_or_else(|| invalid("Nome eseguibile non valido."))?
             .to_string();
         let plan = NetworkPlan {
+            origin: piko_win_platform::network_elevation::current_network_plan_origin()?,
             direction,
             id: Uuid::new_v4(),
             action,
@@ -296,7 +298,8 @@ impl Controller {
 
 fn validate_plan(plan: &NetworkPlan, current: u64) -> io::Result<()> {
     validate_path(&plan.executable)?;
-    if plan.id.is_nil()
+    if !plan.origin.valid()
+        || plan.id.is_nil()
         || plan.rule_id != rule_id(&plan.executable)
         || plan.expires_at <= current
         || plan.expires_at > current.saturating_add(PLAN_SECONDS)
@@ -348,6 +351,9 @@ pub fn execute_helper(encoded: &str) -> io::Result<()> {
             "Windows administrator token required.",
         ));
     }
+    // Serialize across desktops/sessions and reject a delayed helper whose desktop
+    // has exited. Keep the guard through the final audit, even if the desktop closes.
+    let operation = piko_win_platform::network_elevation::begin_network_operation(&plan.origin)?;
     let locked = if plan.action == NetworkAction::Block {
         let exe = inspect_executable(&plan.executable)?;
         if exe.path != plan.executable || Some(&exe.sha256) != plan.sha256.as_ref() {
@@ -370,6 +376,7 @@ pub fn execute_helper(encoded: &str) -> io::Result<()> {
         false,
     )?;
     validate_plan(&plan, now()?)?;
+    operation.ensure_origin_alive()?;
     match plan.action {
         NetworkAction::Block => piko_win_platform::network_control::apply_direction_block(
             &plan.rule_id,
@@ -437,6 +444,10 @@ mod tests {
     fn plan_validation_rejects_expiry_identity_and_action_changes() {
         let path = r"C:\Example\app.exe";
         let mut plan = NetworkPlan {
+            origin: piko_win_platform::network_elevation::NetworkPlanOrigin {
+                pid: 100,
+                creation_filetime: "1234".into(),
+            },
             id: Uuid::new_v4(),
             action: NetworkAction::Block,
             direction: piko_win_platform::network_control::NetworkDirection::Outbound,
@@ -447,6 +458,9 @@ mod tests {
             expires_at: 1200,
         };
         assert!(validate_plan(&plan, 1000).is_ok());
+        let mut legacy = serde_json::to_value(&plan).unwrap_or_default();
+        legacy.as_object_mut().map(|fields| fields.remove("origin"));
+        assert!(serde_json::from_value::<NetworkPlan>(legacy).is_err());
         assert!(validate_plan(&plan, 1200).is_err());
         assert!(validate_plan(&plan, 899).is_err());
         plan.executable = r"C:\Other\app.exe".into();
@@ -456,6 +470,11 @@ mod tests {
         assert!(validate_plan(&plan, 1000).is_err());
         plan.sha256 = None;
         assert!(validate_plan(&plan, 1000).is_ok());
+        plan.origin.creation_filetime = "0".into();
+        assert!(validate_plan(&plan, 1000).is_err());
+        plan.origin.creation_filetime = "1234".into();
+        plan.origin.pid = 0;
+        assert!(validate_plan(&plan, 1000).is_err());
     }
     #[test]
     fn helper_input_is_bounded_and_never_a_shell_command() {

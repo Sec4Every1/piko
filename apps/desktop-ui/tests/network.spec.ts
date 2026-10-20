@@ -16,7 +16,7 @@ const network: NetworkSnapshot = { active_profiles: 2, profiles: [
 ], local_policy_modify_state: 'ok', rules: [], complete: true, warnings: [] };
 type BridgeState = { inventory: InventorySnapshot; network: NetworkSnapshot; failNetwork: boolean; failInventory: boolean;
   failHistory?: boolean;
-  failPrepare: boolean; failExecute: boolean; failExecuteAt?: number; invalidExecute: boolean; expired: boolean;
+  failPrepare: boolean; failPrepareAt?: number; candidatePaths?: string[]; failExecute: boolean; failExecuteAt?: number; invalidExecute: boolean; expired: boolean;
   plans: NetworkPlan[]; calls: { command: string; args?: Record<string, unknown> }[] };
 declare global { interface Window { __PIKO_NETWORK_TEST__: BridgeState } }
 
@@ -46,11 +46,11 @@ async function installBridge(page: Page) {
       if (command === 'sandbox_status') return { launcher_available: false, max_sessions: 8 };
       if (command === 'sandbox_sessions') return [];
       if (command === 'software_inventory') { if (state.failInventory) throw new Error('Inventory access denied'); return state.inventory; }
-      if (command === 'application_executables') return { app_id: args?.appId, complete: true, warnings: [], paths: [String(args?.appId) === 'example' ? 'C:\\Program Files\\Example\\app.exe' : 'C:\\Other\\other.exe'] };
+      if (command === 'application_executables') return { app_id: args?.appId, complete: true, warnings: [], paths: state.candidatePaths ?? [String(args?.appId) === 'example' ? 'C:\\Program Files\\Example\\app.exe' : 'C:\\Other\\other.exe'] };
       if (command === 'discard_network_plans') return null;
       if (command === 'network_snapshot') { if (state.failNetwork) throw new Error('Firewall read unavailable'); return state.network; }
       if (command === 'prepare_network_action') {
-        if (state.failPrepare) throw new Error('Executable identity could not be verified');
+        if (state.failPrepare || state.calls.filter(c => c.command === 'prepare_network_action').length === state.failPrepareAt) throw new Error('Executable identity could not be verified');
         const action = args?.action as NetworkPlan['action'];
         const path = String(args?.path);
         const plan: NetworkPlan = { id: `b16b49e1-13f1-41f6-bf5b-${String(state.plans.length).padStart(12, '0')}`, action, direction: args?.direction as NetworkPlan['direction'], rule_id: path.includes('Other') ? 'c'.repeat(64) : ruleId,
@@ -304,6 +304,93 @@ test('partial batch keeps a successful first rule and reports the second cancell
   await expect(page.getByLabel('Esiti dei blocchi')).toContainText('Da verificare');
   await expect(page.locator('.rule')).toHaveCount(1);
   expect(await executeCalls(page)).toHaveLength(2);
+});
+
+test('grid applies and removes both directions with one explicit preview per batch', async ({ page }) => {
+  await installBridge(page);
+  await page.getByLabel('Seleziona Example App', { exact: true }).check();
+  await page.getByLabel('Seleziona Other App', { exact: true }).check();
+  await page.getByLabel('Blocco da applicare', { exact: true }).selectOption('both');
+  await page.getByRole('button', { name: 'Prepara blocchi selezionati', exact: true }).click();
+  const preview = page.getByTestId('batch-network-plan');
+  await expect(preview.locator('li')).toHaveCount(4);
+  expect(await executeCalls(page)).toHaveLength(0);
+  await preview.getByRole('checkbox').check();
+  await preview.getByRole('button', { name: 'Applica blocchi con Windows', exact: true }).click();
+  await expect(page.locator('.rule')).toHaveCount(4);
+  // Undo must remain possible even when policy no longer permits new blocks.
+  await page.evaluate(() => window.__PIKO_NETWORK_TEST__.network.profiles[1].firewall_enabled = false);
+  await page.getByRole('button', { name: 'Aggiorna', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Prepara blocchi selezionati', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Prepara rimozione selezionati', exact: true }).click();
+  await expect(preview.locator('li')).toHaveCount(4);
+  await expect(preview).toContainText('tutte le altre regole di Windows continueranno a valere');
+  expect(await executeCalls(page)).toHaveLength(4);
+  await expect(preview.getByRole('button', { name: 'Rimuovi blocchi con Windows', exact: true })).toBeDisabled();
+  await preview.getByRole('checkbox').check();
+  await preview.getByRole('button', { name: 'Rimuovi blocchi con Windows', exact: true }).click();
+  await expect(page.locator('.rule')).toHaveCount(0);
+  expect(await executeCalls(page)).toHaveLength(8);
+});
+
+test('grid removal excludes changed rules and keeps the unselected direction', async ({ page }) => {
+  await installBridge(page);
+  await page.evaluate(({ executable, ruleId }) => {
+    window.__PIKO_NETWORK_TEST__.network.rules = [
+      { id: ruleId, executable, direction: 'outbound', enabled: true, verified: true },
+      { id: ruleId, executable, direction: 'inbound', enabled: true, verified: true },
+      { id: 'c'.repeat(64), executable: 'C:\\Other\\other.exe', direction: 'outbound', enabled: true, verified: false },
+    ];
+  }, { executable, ruleId });
+  await page.getByRole('button', { name: 'Aggiorna', exact: true }).click();
+  await page.getByLabel('Seleziona Example App', { exact: true }).check();
+  await page.getByLabel('Seleziona Other App', { exact: true }).check();
+  await page.getByRole('button', { name: 'Prepara rimozione selezionati', exact: true }).click();
+  const preview = page.getByTestId('batch-network-plan');
+  await expect(preview.locator('li')).toHaveCount(1);
+  await expect(preview).toContainText('In uscita');
+  await preview.getByRole('checkbox').check();
+  await preview.getByRole('button', { name: 'Rimuovi blocchi con Windows', exact: true }).click();
+  await expect(page.locator('.rule')).toHaveCount(2);
+  await expect(page.locator('.rule').filter({ hasText: executable })).toContainText('In ingresso');
+  const removalPlans = await page.evaluate(() => window.__PIKO_NETWORK_TEST__.plans.filter(p => p.action === 'remove_block'));
+  expect(removalPlans.map(p => [p.executable, p.direction])).toEqual([[executable, 'outbound']]);
+});
+
+test('partial two-direction batch labels each outcome and stops after cancellation', async ({ page }) => {
+  await installBridge(page);
+  await page.getByLabel('Seleziona Example App', { exact: true }).check();
+  await page.getByLabel('Seleziona Other App', { exact: true }).check();
+  await page.getByLabel('Blocco da applicare', { exact: true }).selectOption('both');
+  await page.getByRole('button', { name: 'Prepara blocchi selezionati', exact: true }).click();
+  await page.getByTestId('batch-network-plan').getByRole('checkbox').check();
+  await page.evaluate(() => window.__PIKO_NETWORK_TEST__.failExecuteAt = 2);
+  await page.getByRole('button', { name: 'Applica blocchi con Windows', exact: true }).click();
+  const outcomes = page.getByLabel('Esiti dei blocchi').locator('li');
+  await expect(outcomes).toHaveCount(4);
+  await expect(outcomes.nth(0)).toContainText('In uscita · Modifica completata');
+  await expect(outcomes.nth(1)).toContainText('In ingresso · Da verificare');
+  await expect(outcomes.nth(2)).toContainText('Non eseguita');
+  await expect(outcomes.nth(3)).toContainText('Non eseguita');
+  expect(await executeCalls(page)).toHaveLength(2);
+  await expect(page.locator('.rule')).toHaveCount(1);
+});
+
+test('two-direction batch respects the native plan limit and discards a partially prepared batch', async ({ page }) => {
+  await installBridge(page);
+  await page.evaluate(() => window.__PIKO_NETWORK_TEST__.candidatePaths = Array.from({ length: 17 }, (_, i) => `C:\\Example\\app${i}.exe`));
+  await page.getByLabel('Seleziona Example App', { exact: true }).check();
+  await page.getByLabel('Blocco da applicare', { exact: true }).selectOption('both');
+  await expect(page.getByRole('button', { name: 'Prepara blocchi selezionati', exact: true })).toBeDisabled();
+  await page.getByLabel('Blocco da applicare', { exact: true }).selectOption('outbound');
+  await page.evaluate(() => window.__PIKO_NETWORK_TEST__.failPrepareAt = 2);
+  await page.getByRole('button', { name: 'Prepara blocchi selezionati', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Executable identity could not be verified');
+  await expect(page.getByTestId('batch-network-plan')).toHaveCount(0);
+  expect(await executeCalls(page)).toHaveLength(0);
+  const discarded = await page.evaluate(() => window.__PIKO_NETWORK_TEST__.calls.filter(c => c.command === 'discard_network_plans'));
+  expect(discarded).toHaveLength(1);
+  expect(discarded[0].args?.planIds).toHaveLength(1);
 });
 
 test('history is lazy, compact, paginated and distinguishes partial readings and stale failures', async ({page}) => {

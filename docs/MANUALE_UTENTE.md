@@ -268,6 +268,19 @@ del traffico bloccato. La configurazione locale può differire dalle policy di d
 
 ### Rimuovere un blocco
 
+Per operare su più app, selezionarle nella griglia e scegliere la direzione:
+**uscita**, **ingresso** oppure **ingresso e uscita**. **Prepara blocchi selezionati**
+mostra tutti gli eseguibili prima della conferma. **Prepara rimozione selezionati**
+mostra invece soltanto le regole piko verificate dei file selezionati, nelle
+direzioni scelte; resta disponibile anche quando non si possono creare nuovi blocchi.
+La rimozione va confermata e autorizzata tramite Windows come l'applicazione.
+I limiti sono 10 app, 20 eseguibili e 32 regole per operazione (quindi al massimo
+16 eseguibili se si applicano entrambe le direzioni). Una richiesta amministrativa
+può comparire per ogni regola. Al primo errore o annullamento il lotto si ferma:
+gli esiti indicano separatamente ingresso e uscita, modifiche completate, operazione
+da verificare e richieste non eseguite. Non viene annullato automaticamente il lavoro
+già completato. Solo le regole mostrate nell'anteprima saranno interessate.
+
 Nella regola interessata scegliere **Prepara rimozione**, controllare il percorso,
 confermare e autorizzare Windows. Questa operazione rimuove solo il blocco piko;
 le altre regole di Windows continuano a valere. Funziona anche se il file è stato
@@ -277,8 +290,13 @@ In assenza di piko, un amministratore può esaminare le regole in uscita del gru
 
 Richieste ed esiti sono registrati nel registro **Application** di Windows, origine
 **piko**, consultabile anche nei Log tecnici quando raccolto dal monitor. Dopo
-un errore o un timeout aggiornare prima di riprovare: una modifica potrebbe essere
-già stata applicata. Non viene effettuato replay automatico.
+un errore aggiornare prima di riprovare: una modifica potrebbe essere già stata
+applicata. L'interfaccia attende che il componente amministratore termini, senza
+considerare conclusa l'operazione dopo un semplice timeout. Una seconda operazione
+non si accoda a un'altra ancora in corso. Dopo la chiusura della dashboard un helper
+non ancora arrivato alla modifica rifiuta il piano della vecchia istanza; una modifica
+già iniziata può completarsi e va verificata rileggendo le regole.
+Non viene effettuato replay automatico.
 
 Sono ammessi eseguibili locali fino a 256 MiB. Percorsi di rete, collegamenti,
 reparse point, eseguibili sotto Windows e nella cartella di piko sono esclusi.

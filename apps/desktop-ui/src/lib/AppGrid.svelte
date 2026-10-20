@@ -2,14 +2,14 @@
   import SignatureCheck from './SignatureCheck.svelte';
   import { onDestroy, tick } from 'svelte';
   import type { Language } from './i18n';
-  import { applicationExecutables, prepareNetworkAction, executeNetworkAction, discardNetworkPlans, directionLabel, type InstalledSoftware, type InventorySnapshot, type ExecutableCandidates, type NetworkPlan, type NetworkDirection } from './appControl';
+  import { applicationExecutables, prepareNetworkAction, executeNetworkAction, discardNetworkPlans, directionLabel, type InstalledSoftware, type InventorySnapshot, type ExecutableCandidates, type NetworkPlan, type NetworkDirection, type NetworkSnapshot } from './appControl';
   import { installDate, sortApps } from './appGrid';
-  let { language, inventory, inventoryError, canBlock, busy = $bindable(false), loading, focusApplicationId = '', focusRequest = 0, prepareFocusedApplication = false, onRefresh, onManual, onSandbox, onRestricted }: { language: Language; inventory: InventorySnapshot | null; inventoryError: string; canBlock: boolean; busy?: boolean; loading: boolean; focusApplicationId?: string; focusRequest?: number; prepareFocusedApplication?: boolean; onRefresh: () => Promise<void>; onManual: (app: InstalledSoftware) => void; onSandbox: (path: string) => void; onRestricted: (path: string) => void } = $props();
+  let { language, inventory, inventoryError, canBlock, network = null, busy = $bindable(false), loading, focusApplicationId = '', focusRequest = 0, prepareFocusedApplication = false, onRefresh, onManual, onSandbox, onRestricted }: { language: Language; inventory: InventorySnapshot | null; inventoryError: string; canBlock: boolean; network?: NetworkSnapshot | null; busy?: boolean; loading: boolean; focusApplicationId?: string; focusRequest?: number; prepareFocusedApplication?: boolean; onRefresh: () => Promise<void>; onManual: (app: InstalledSoftware) => void; onSandbox: (path: string) => void; onRestricted: (path: string) => void } = $props();
   const it = $derived(language === 'it');
   let search = $state(''), order = $state('newest'), page = $state(0), ids = $state<string[]>([]);
   let found = $state<Record<string, ExecutableCandidates>>({}), errors = $state<Record<string, string>>({}), resolving = $state<string[]>([]), excluded = $state<string[]>([]);
   let plans = $state<NetworkPlan[]>([]), confirmation = $state(false), error = $state(''), outcomes = $state<{ path: string; status: string }[]>([]), now = $state(Date.now());
-  let direction=$state<NetworkDirection>('outbound');
+  let direction = $state<NetworkDirection | 'both'>('outbound');
   let handledFocusRequest = 0;
   let alive = true;
   const timer = setInterval(() => now = Date.now(), 1000);
@@ -20,6 +20,10 @@
   const targets = $derived([...new Map(ids.flatMap(id => found[id]?.paths ?? []).filter(p => !excluded.includes(p.toLowerCase())).map(p => [p.toLowerCase(), p])).values()]);
   const missing = $derived(ids.some(id => !inventory?.entries.some(a => a.id === id) || !found[id]?.paths.length || !!errors[id]));
   const expired = $derived(plans.some(p => p.expires_at * 1000 <= now));
+  const directions = $derived<NetworkDirection[]>(direction === 'both' ? ['outbound', 'inbound'] : [direction]);
+  const removals = $derived((network?.complete ? network.rules : []).filter(rule => rule.verified && rule.enabled
+    && directions.includes(rule.direction ?? 'outbound') && targets.some(path => path.toLowerCase() === rule.executable.toLowerCase())));
+  const removing = $derived(plans[0]?.action === 'remove_block');
   $effect(() => {
     const request = focusRequest, id = focusApplicationId, shouldPrepare = prepareFocusedApplication, snapshot = inventory;
     if (!request || request === handledFocusRequest || !id || !snapshot || busy || loading) return;
@@ -58,26 +62,30 @@
     catch (e) { if (alive) errors = { ...errors, [app.id]: String(e) }; }
     finally { if (alive) resolving = resolving.filter(id => id !== app.id); }
   }
-  async function prepare() {
-    if (busy || loading || !canBlock || resolving.length || missing || !targets.length || targets.length > 20 || inventoryError) return;
-    const paths = [...targets]; busy = true; error = ''; outcomes = []; await discard();
+  async function prepare(action: NetworkPlan['action'] = 'block') {
+    const requests = action === 'block'
+      ? targets.flatMap(path => directions.map(direction => ({ path, direction })))
+      : removals.map(rule => ({ path: rule.executable, direction: rule.direction ?? 'outbound' }));
+    if (busy || loading || (action === 'block' ? !canBlock : !network?.complete) || resolving.length || missing
+      || !requests.length || requests.length > 32 || targets.length > 20 || inventoryError) return;
+    busy = true; error = ''; outcomes = []; await discard();
     const prepared: NetworkPlan[] = [];
-    try { for (const path of paths) prepared.push(await prepareNetworkAction('block', path,direction)); if (alive) plans = prepared; else await discardNetworkPlans(prepared.map(p => p.id)); }
+    try { for (const request of requests) prepared.push(await prepareNetworkAction(action, request.path, request.direction)); if (alive) plans = prepared; else await discardNetworkPlans(prepared.map(p => p.id)); }
     catch (e) { try { await discardNetworkPlans(prepared.map(p => p.id)); } catch { /* plans also expire server-side */ } if (alive) error = String(e); }
     finally { busy = false; }
   }
   async function execute() {
-    if (busy || loading || !confirmation || !plans.length || expired || !canBlock || inventoryError) return;
+    if (busy || loading || !confirmation || !plans.length || expired || (removing ? !network?.complete : !canBlock) || inventoryError) return;
     const submitted = plans; plans = []; confirmation = false; busy = true; error = ''; outcomes = [];
     let completed = 0;
     try {
       for (const plan of submitted) {
-        try { await executeNetworkAction(plan.id); completed++; outcomes = [...outcomes, { path: plan.executable, status: it ? 'Modifica completata' : 'Change completed' }]; }
-        catch (e) { error = String(e); outcomes = [...outcomes, { path: plan.executable, status: it ? 'Da verificare: operazione interrotta' : 'Check outcome: operation interrupted' }]; break; }
+        try { await executeNetworkAction(plan.id); completed++; outcomes = [...outcomes, { path: plan.executable, status: `${directionLabel(plan.direction, it)} · ${it ? 'Modifica completata' : 'Change completed'}` }]; }
+        catch (e) { error = String(e); outcomes = [...outcomes, { path: plan.executable, status: `${directionLabel(plan.direction, it)} · ${it ? 'Da verificare: operazione interrotta' : 'Check outcome: operation interrupted'}` }]; break; }
       }
       if (completed < submitted.length) {
         const pending = submitted.slice(completed + 1);
-        outcomes = [...outcomes, ...pending.map(p => ({ path: p.executable, status: it ? 'Non eseguita' : 'Not executed' }))];
+        outcomes = [...outcomes, ...pending.map(p => ({ path: p.executable, status: `${directionLabel(p.direction, it)} · ${it ? 'Non eseguita' : 'Not executed'}` }))];
         await discardNetworkPlans(submitted.slice(completed).map(p => p.id));
       }
     } catch (e) { error = String(e); }
@@ -106,13 +114,14 @@
       {#each found[app.id]?.paths ?? [] as executable}<label class="exe"><input type="checkbox" checked={!excluded.includes(executable.toLowerCase())} disabled={busy} onchange={async () => { await discard(); const key = executable.toLowerCase(); excluded = excluded.includes(key) ? excluded.filter(p => p !== key) : [...excluded, key]; }} /><code>{executable}</code></label><button class="text-button" disabled={busy} onclick={() => onSandbox(executable)}>{it ? 'Prova questo eseguibile in isolamento' : 'Try this executable in isolation'}</button><button class="text-button" disabled={busy} onclick={() => onRestricted(executable)}>{it ? "Avvio limitato · AppContainer" : "Restricted launch · AppContainer"}</button><SignatureCheck {executable} {language} />{/each}
     </details>{/each}
     {#if missing && !resolving.length}<p class="warning">{it ? 'Alcune app non hanno eseguibili individuati. Apri i dettagli e usa il percorso manuale, oppure rimuovile dalla selezione.' : 'Some apps have no discovered executable. Open details and use a manual path, or remove them from the selection.'}</p>{/if}
-    <div class="toolbar"><label class="search">{it ? 'Blocco da applicare' : 'Restriction to apply'}<select aria-label={it?'Blocco da applicare':'Restriction to apply'} bind:value={direction} disabled={busy} onchange={discard}><option value="outbound">{it ? 'Accesso alla rete — connessioni in uscita' : 'Network access — outbound connections'}</option><option value="inbound">{it?'Accesso alla rete — connessioni in ingresso':'Network access — inbound connections'}</option><option disabled>{it ? 'Percorsi fuori dall’installazione — non disponibile' : 'Paths outside installation — unavailable'}</option><option disabled>{it ? 'File di sistema — non disponibile' : 'System files — unavailable'}</option><option disabled>{it ? 'Aggiornamento versione — non disponibile' : 'Version updates — unavailable'}</option></select></label><button class="button primary contain-action" disabled={busy || loading || !canBlock || !!inventoryError || !!resolving.length || missing || !targets.length || targets.length > 20} onclick={prepare}>{it ? 'Prepara blocchi selezionati' : 'Prepare selected blocks'}</button></div>
-    <p class="hint">{it ? 'Massimo 10 app e 20 eseguibili. I file trovati sono candidati dalla cartella e dall’icona dichiarate, non una copertura completa del prodotto. Verifica i percorsi nell’anteprima.' : 'Up to 10 apps and 20 executables. Files are candidates from the declared folder and icon, not complete product coverage. Check paths in the preview.'}</p>
+    <div class="toolbar"><label class="search">{it ? 'Blocco da applicare' : 'Restriction to apply'}<select aria-label={it?'Blocco da applicare':'Restriction to apply'} bind:value={direction} disabled={busy} onchange={discard}><option value="outbound">{it ? 'Accesso alla rete — connessioni in uscita' : 'Network access — outbound connections'}</option><option value="both">{it ? 'Accesso alla rete — ingresso e uscita' : 'Network access — inbound and outbound'}</option><option value="inbound">{it?'Accesso alla rete — connessioni in ingresso':'Network access — inbound connections'}</option><option disabled>{it ? 'Percorsi fuori dall’installazione — non disponibile' : 'Paths outside installation — unavailable'}</option><option disabled>{it ? 'File di sistema — non disponibile' : 'System files — unavailable'}</option><option disabled>{it ? 'Aggiornamento versione — non disponibile' : 'Version updates — unavailable'}</option></select></label><button class="button primary contain-action" disabled={busy || loading || !canBlock || !!inventoryError || !!resolving.length || missing || !targets.length || targets.length > 20 || targets.length * directions.length > 32} onclick={() => prepare()}>{it ? 'Prepara blocchi selezionati' : 'Prepare selected blocks'}</button><button class="button secondary restore-outline" disabled={busy || loading || !network?.complete || !!inventoryError || !!resolving.length || missing || !removals.length || removals.length > 32} onclick={() => prepare('remove_block')}>{it ? 'Prepara rimozione selezionati' : 'Prepare selected removals'}</button></div>
+    <p class="hint">{it ? 'Massimo 10 app, 20 eseguibili e 32 regole per operazione. I file trovati sono candidati dalla cartella e dall’icona dichiarate, non una copertura completa del prodotto. Verifica i percorsi nell’anteprima.' : 'Up to 10 apps, 20 executables and 32 rules per operation. Files are candidates from the declared folder and icon, not complete product coverage. Check paths in the preview.'}</p>
   </div>{/if}
+  {#if ids.length}<p class="hint">{it ? 'La rimozione include solo le regole piko verificate degli eseguibili selezionati e delle direzioni scelte. Non concede accesso universale alla rete.' : 'Removal includes only verified piko rules for the selected executables and directions. It does not grant universal network access.'}</p>{/if}
   {#if error}<p class="warning" role="alert">{error}</p>{/if}
-  {#if plans.length}<div class="batch-plan" data-testid="batch-network-plan"><h3>{it ? 'Conferma i blocchi di rete' : 'Confirm network blocks'}</h3><p>{it ? 'Nessuna modifica ancora eseguita. Tutti gli utenti, tutte le destinazioni/sorgenti nella direzione indicata, anche rete locale. Le regole restano attive chiudendo piko e valgono per le versioni future allo stesso percorso.' : 'No change applied yet. All users and destinations/sources in the indicated direction, including LAN. Rules persist after piko closes and apply to future versions at the same path.'}</p><ul>{#each plans as p}<li><strong>{p.display_name} · {directionLabel(p.direction,it)}</strong><code>{p.executable}</code></li>{/each}</ul><p>{it ? 'Windows può chiedere conferma per ciascun eseguibile. Al primo errore o annullamento ci fermiamo: i blocchi già applicati rimangono, quelli successivi non vengono eseguiti.' : 'Windows may prompt for each executable. We stop at the first error or cancellation: completed blocks remain and later blocks are not executed.'}</p>
+  {#if plans.length}<div class="batch-plan" data-testid="batch-network-plan"><h3>{removing ? (it ? 'Conferma la rimozione dei blocchi' : 'Confirm block removal') : (it ? 'Conferma i blocchi di rete' : 'Confirm network blocks')}</h3><p>{removing ? (it ? 'Nessuna modifica ancora eseguita. Verranno rimosse solo le regole piko elencate; tutte le altre regole di Windows continueranno a valere.' : 'No change applied yet. Only the listed piko rules will be removed; all other Windows rules remain in effect.') : (it ? 'Nessuna modifica ancora eseguita. Tutti gli utenti, tutte le destinazioni/sorgenti nella direzione indicata, anche rete locale. Le regole restano attive chiudendo piko e valgono per le versioni future allo stesso percorso.' : 'No change applied yet. All users and destinations/sources in the indicated direction, including LAN. Rules persist after piko closes and apply to future versions at the same path.')}</p><ul>{#each plans as p}<li><strong>{p.display_name} · {directionLabel(p.direction,it)}</strong><code>{p.executable}</code></li>{/each}</ul><p>{it ? 'Windows può chiedere conferma per ciascun eseguibile. Al primo errore o annullamento ci fermiamo: le modifiche già completate rimangono, quelle successive non vengono eseguite.' : 'Windows may prompt for each executable. We stop at the first error or cancellation: completed changes remain and later changes are not executed.'}</p>
     {#if expired}<p class="warning">{it ? 'Anteprima scaduta: prepara di nuovo.' : 'Preview expired: prepare again.'}</p>{/if}
-    <label class="exe"><input type="checkbox" bind:checked={confirmation} disabled={busy || expired} />{it ? 'Ho verificato tutti i percorsi e autorizzo questi blocchi.' : 'I reviewed all paths and authorize these blocks.'}</label><div class="toolbar"><button class="button primary contain-action" disabled={busy || loading || !confirmation || expired || !canBlock || !!inventoryError} onclick={execute}>{it ? 'Applica blocchi con Windows' : 'Apply blocks with Windows'}</button><button class="button secondary" disabled={busy} onclick={discard}>{it ? 'Annulla selezione blocchi' : 'Cancel block preview'}</button></div></div>{/if}
+    <label class="exe"><input type="checkbox" bind:checked={confirmation} disabled={busy || expired} />{removing ? (it ? 'Ho verificato tutti i percorsi e autorizzo queste rimozioni.' : 'I reviewed all paths and authorize these removals.') : (it ? 'Ho verificato tutti i percorsi e autorizzo questi blocchi.' : 'I reviewed all paths and authorize these blocks.')}</label><div class="toolbar"><button class="button primary contain-action" disabled={busy || loading || !confirmation || expired || (removing ? !network?.complete : !canBlock) || !!inventoryError} onclick={execute}>{removing ? (it ? 'Rimuovi blocchi con Windows' : 'Remove blocks with Windows') : (it ? 'Applica blocchi con Windows' : 'Apply blocks with Windows')}</button><button class="button secondary" disabled={busy} onclick={discard}>{it ? 'Annulla selezione blocchi' : 'Cancel block preview'}</button></div></div>{/if}
   {#if busy}<p role="status">{it ? 'Operazione in corso…' : 'Operation in progress…'}</p>{/if}
   {#if outcomes.length}<ul class="outcomes" aria-label={it ? 'Esiti dei blocchi' : 'Block outcomes'}>{#each outcomes as outcome}<li><strong>{outcome.status}</strong><code>{outcome.path}</code></li>{/each}</ul>{/if}
 </section>

@@ -55,7 +55,7 @@
 
 <div class="capability-workspace" data-testid="app-permissions">
   <section class="intro"><span class="section-label">{it ? 'CONTROLLO PER ESEGUIBILE' : 'PER-EXECUTABLE CONTROL'}</span><h2>{it ? 'Decidi quali app possono collegarsi alla rete' : 'Choose which apps can connect to the network'}</h2><p>{it ? 'Blocca le connessioni in uscita o in ingresso di un file .exe attraverso Windows Firewall. Prima vedi il percorso esatto, poi confermi: Windows richiederà un amministratore.' : 'Block outbound or inbound connections for an .exe file through Windows Firewall. Review its exact path, then confirm: Windows will request an administrator.'}</p></section>
-  <AppGrid {language} {inventory} {inventoryError} {canBlock} bind:busy {loading} focusApplicationId={networkFocus.applicationId} focusRequest={networkFocus.request} prepareFocusedApplication={networkFocus.prepare} onRefresh={refresh} onManual={selectApp} onSandbox={(path) => { sandboxPath = path; sandboxRequest++; }} onRestricted={(path) => { restrictedPath = path; restrictedRequest++; }} />
+  <AppGrid {language} {inventory} {inventoryError} {canBlock} network={networkError ? null : network} bind:busy {loading} focusApplicationId={networkFocus.applicationId} focusRequest={networkFocus.request} prepareFocusedApplication={networkFocus.prepare} onRefresh={refresh} onManual={selectApp} onSandbox={(path) => { sandboxPath = path; sandboxRequest++; }} onRestricted={(path) => { restrictedPath = path; restrictedRequest++; }} />
   <SoftwareHistory {language} />
   <RegistryHistory {language} />
   <Advisories {language} onOpenNetwork={openNetworkForApplication} />

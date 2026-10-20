@@ -1,51 +1,44 @@
 # Piko: resume checkpoint
 
-Updated: 2026-10-20. Start with root AGENTS.md and docs/WORK_QUEUE.md.
-Verify git status and live state before mutation; read only task-relevant files.
+Updated: 2026-10-20. Read AGENTS.md, git status, then WORK_QUEUE.md.
+Read only the active item's relevant sources; preserve existing work.
 
-## Delivered checkpoint
-- Public development commit: 6b8293f. Account lifecycle monitoring (ADR 0033),
-  pinned Rust 1.99.0, native CI portability and installed hash preflight.
-- Same-version installer refresh with protected staging, binary backup and rollback
-  (ADR 0034). Cross-version migration and signed updates remain unsupported.
-- Dependency audits repaired, Vitest 5.0.5, exact-version MPL reviews and five
-  verified upstream source archives included in development packages.
-- AGENTS.md defines continuation/delegation/checks; WORK_QUEUE.md orders remaining
-  work. These files replace repeated chat-history reconstruction.
+## Latest delivery: APP-01 (ADR 0035)
+- Grid: outbound/inbound/both batches, selected verified-rule removal, explicit
+  preview/confirmation, 32-plan bound, direction-specific partial outcomes.
+- Helper lifetime: terminal wait, global nonqueued mutex, origin PID + creation
+  FILETIME validation before mutation. A delayed old helper rejects a closed
+  desktop; an already-started change may finish while excluding new helpers.
+- Desktop/helper must be rebuilt together; legacy plans fail closed. Hung helpers
+  keep the caller pending; automatic cancellation is not implemented.
+- Local checks passed: workspace Rust 151 tests, 4 ignored (two are child fixtures
+  invoked by parent tests); targeted app-control 26, lifecycle 4; Clippy/fmt.
+  Browser network suite 22 scenarios plus one additional plan-limit scenario pass.
+  Frontend check/build and runtime/desktop release builds pass.
+- Refresh local package with scripts/package.ps1 -Profile release if absent:
+  artifacts/piko-0.2.0-windows-x64-release (ignored, never commit).
+- Publish this reviewed checkpoint once. Full CI runs automatically; inspect the
+  matching commit under GitHub Actions before claiming remote qualification.
+  Last prior green baseline: 6b8293f / run 39429554940. Current source changes
+  have local evidence; no result from the new remote pipeline is claimed yet.
 
-## Verification
-- Full local scripts/ci-sbom.ps1 passed: both Rust dependency graphs, npm audit
-  (zero vulnerabilities), 14 Rust SBOMs plus frontend SBOM, unchanged lockfiles.
-- Frontend: 89 tests, check/build pass. Earlier account Playwright scenario passed.
-- Native ETW/process targeted tests pass; remote Windows job for 5acb14a passed
-  full tests, desktop build and IPC smoke (run 39427136418).
-- Read-only service preflight: nine fixtures per shell. Refresh/rollback: ten
-  fixtures per shell. Both Windows PowerShell 5.1 and PowerShell 7 pass locally.
-- Local release package refreshed: artifacts/piko-0.2.0-windows-x64-release.
-  Four executable checksums, updater and five source archives verified.
-- Remote CI for 6b8293f: run 39429554940, Windows and dependency jobs both passed.
-  DEV-01 complete. Ignored .build/ evidence is local and not portable.
+## Next action / installed boundary
+- DEV-02 still blocks live qualification. Installed service remains running and
+  was NOT updated/restarted. Its service executable differs from its manifest.
+- One historical protected backup matches that manifest; no scanned backup or
+  four local build/package candidates matches the current service. A stale
+  development manifest is plausible, but current binary provenance is unproven.
+- Design verified recovery that retains originals/config/evidence before any
+  replacement. Do not overwrite the manifest to bypass validation or restore old
+  executables against newer evidence. Existing same-version updater (ADR 0034)
+  correctly refuses inconsistent installations.
+- Then qualify real packet blocking, undo, desktop/service restart and alternate
+  administrator credentials. APP-01 remains VERIFIED-LOCAL, not complete endpoint
+  protection. APP-02 file/system/update capabilities remain separate queued work.
 
-## Installed-runtime boundary / next action
-- Installed service remains running and was NOT updated or restarted.
-- Its piko-service.exe differs from its installed manifest; updater correctly
-  refuses this inconsistency. Do not rewrite the manifest or uninstall to bypass it.
-- Read-only comparison: one historical installed backup matches that manifest;
-  no scanned historical backup or four local build/package candidates matches the
-  current installed service. This suggests a stale manifest, not proven provenance
-  of the current executable. Do not restore old binaries against newer evidence.
-- Next, DEV-02: establish
-  provenance of installed binaries and design verified recovery from the mismatch,
-  preserving configuration, evidence and original binaries before any live change.
-  Installation/reboot/uninstall qualification remains open; APP-01 follows.
-- Use existing authorization for publication and approved OS changes. Request only
-  genuinely missing scope; don't repeat already granted permission requests.
-
-## Permanent product constraints
-- MIT; keep personal identifiers, runtime databases, secrets and logs out of source.
-- Minimal UI, grouped alerts, application names, details/raw on demand.
-- Preserve retained security events for 12 months within 2 GiB; stop collection on
-  capacity exhaustion rather than silently discard unexpired evidence.
-- Contextual noise filtering is not a universal trusted-loader allowlist.
-
-Replace this checkpoint at the next milestone; don't append a chat transcript.
+## Permanent constraints
+MIT, no personal identifiers/secrets/runtime data in source. Minimal grouped UI,
+application names, details/raw on demand. Retain security events 12 months within
+2 GiB; suspend collection on capacity rather than discard unexpired evidence.
+Use existing authorization; do not repeat granted permission requests.
+Replace this checkpoint at milestones; don't append chat history.

@@ -76,3 +76,22 @@ local build/package candidates matches the current installed service executable.
 This is consistent with a stale development manifest, but does not establish the
 current executable's provenance. No binary/manifest was overwritten and no old
 binary was run against current evidence.
+
+## 2026-10-20: network batches and helper lifetime (ADR 0035)
+
+Browser network suite: 22 scenarios passed, including three new bidirectional
+batch/undo/partial-outcome cases; one additional plan-limit/partial-preparation
+scenario passed separately. Bridge fixtures never modify real Firewall rules.
+Frontend check/build passed. Targeted Rust: app-control 26 passed, one live
+AppContainer test ignored; network helper lifecycle four passed, two subprocess
+entrypoints ignored standalone but invoked by their parent tests. Tests cover
+cross-process exclusion/release, abandonment/retry, original desktop exit and
+creation-time mismatch, plus legacy payload rejection. Workspace tests passed:
+151 passed, four ignored. Targeted Clippy and workspace formatting passed.
+
+Runtime workspace and native desktop release builds passed. No dependency/lockfile
+changes were introduced, so the prior audit was not needlessly rerun locally.
+The new source checkpoint triggers the full remote pipeline separately; the prior
+green run is not evidence for these changes. No real Firewall/installation change
+was made. Packet blocking, OS restart and alternate-admin global-mutex access
+remain qualification work, as does installed recovery from the manifest mismatch.

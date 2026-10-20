@@ -13,7 +13,7 @@ have a concrete user-visible result, tests/evidence and accurate capability stat
 |---|---|---|---|
 | DEV-01 | P0 DONE | Green remote CI baseline: commit 6b8293f, run 39429554940; Windows checks and dependency audit both passed. | `.github/workflows/ci.yml`, `scripts/ci-checks.ps1`, `scripts/ci-sbom.ps1`, `deny.toml`; evidence in VALIDATION.md |
 | DEV-02 | P0 BLOCKED | Qualify the updated Windows installation: service/UI versions agree, account categories work over real IPC, restart/reboot/uninstall/reader ACL failures are visible. Use benign fixtures; record Windows build and limitations. | Same-version refresh/rollback implemented and fixture-tested (ADR 0034); current installed service fails manifest hash validation and is deliberately refused. Establish installed binary provenance and verified recovery before live qualification; preserve data/configuration/original binaries. Installer scripts, ADR 0008/0031/0033/0034. Review authorized scope before changing a running installation. |
-| APP-01 | P1 READY | Complete application network-rule workflow qualification: discovery, multi-select, prepare/confirm, both directions, partial failure, restart and undo; show effective supported controls clearly. | Existing app-control, helper, AppGrid; ADR 0010 and relevant network-control ADRs. Inspect current implementations before changing them. |
+| APP-01 | P1 VERIFIED-LOCAL | Added both-direction selection, batch undo of verified selected rules and per-direction outcomes. Fixed helper lifetime/serialization across desktop instances; browser/native fixture checks pass. Live packet/restart/installed qualification remains open, so this is not DONE. | ADR 0035; AppGrid, app-control, network_elevation. Installed deployment still depends on DEV-02; exact verification in VALIDATION.md. |
 | APP-02 | P1 READY | Define and implement the first usable per-app capability contract. Compare supported Windows isolation mechanisms for outside-install paths/system files/update writes; implement one real enforceable scope with verification and undo. Unsupported controls stay explicit. | APP-01; requirements 20-23/42, architecture addendum, existing AppContainer path. No generic file blocking claim from path-only Firewall rules. |
 | DET-01 | P2 BLOCKED | Behavioral/ransomware slice with measured file-change/canary signals, benign replay, bounded noise, evidence and remediation. Define measurable coverage and loss before claiming prevention. | Reliable sensors + APP-02 feasibility; requirements 24-27. Kernel mediation, if needed, is its own qualified milestone. |
 | GRAPH-01 | P2 READY | Verified process ancestry/observed relationships with event references, PID reuse and stale/unknown tests; compact investigation view. | Existing investigation/ETW; requirements 15-16, ATTACK_PATH_MODEL. Potential/counterfactual engines depend on valid evidence. |
@@ -28,13 +28,12 @@ them; do not mark an entire requirement complete from a small monitoring slice.
 
 ## Active task brief (replace when work starts)
 
-- ID: DEV-02 (blocked on verified recovery from installed manifest mismatch).
-- Result: qualify the updated installation while preserving existing evidence.
-- First action: review NEXT_SESSION diagnosis and ADR 0034; retain original
-  binaries/configuration and establish verified recovery before live changes.
-- Acceptance: consistent manifest/binaries, service/UI IPC, lifecycle/ACL failure
-  checks with recorded platform and limitations. Do not run old backups against
-  newer evidence or rewrite a manifest simply to make validation pass.
+- ID: APP-01; local implementation complete, remote/live qualification outstanding.
+- First action: inspect the latest CI checkpoint once; resolve actual failures.
+  Then DEV-02 recovery design is required before installed network/restart probes.
+- Acceptance: full network workflow, packet/restart/undo checks with a benign
+  target; preserve original installation and evidence. Do not restore old binaries
+  against newer evidence or rewrite a manifest merely to pass validation.
 - Delegation: at most one bounded independent review; coordinator owns integration.
 
 ## Completion evidence

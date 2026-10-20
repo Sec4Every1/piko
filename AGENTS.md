@@ -34,6 +34,9 @@
   ignored `.build/`; inspect failures rather than repeatedly printing whole logs.
 - Run checks appropriate to the change. Broaden after failures or contract changes;
   do not rerun passed checks without a reason. Never claim an unrun check passed.
+- Publish one reviewed code checkpoint for automatic full CI; keep its pending
+  status explicit. Avoid idle polling and repeated cold desktop builds/audits when
+  targeted local evidence already supports continuing independent work.
 - Existing checks: `scripts/ci-checks.ps1`, `scripts/ci-sbom.ps1` (full release/CI);
   targeted `cargo test -p <crate>`, workspace fmt/Clippy; frontend npm check/test,
   affected Playwright scenarios, build when UI/native packaging changes.
