@@ -129,3 +129,9 @@ link e ACL scrivibili da soggetti non autorizzati sono rifiutati. Non correggere
 manifest per forzare l'aggiornamento. Le interruzioni di alimentazione richiedono
 recupero dai backup: il recupero automatico non è implementato. ADR0034 riporta
 copertura e limiti; la prova sull'installazione reale resta da qualificare.
+
+Per preparare il recupero di un'installazione incoerente è disponibile
+`Backup-PikoInstallation.ps1`: conserva eseguibili, manifest originale,
+configurazione, hash e metadati ACL in una nuova destinazione privata.
+Non corregge il manifest, non sostituisce file e non riavvia il servizio.
+Non comprende l'archivio eventi e non è ancora una procedura di ripristino.

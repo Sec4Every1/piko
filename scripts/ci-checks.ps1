@@ -30,6 +30,8 @@ try {
     Invoke-PikoCheck pwsh @('-NoProfile', '-File', 'scripts/tests/Test-PikoService.Tests.ps1') 'service-preflight-tests.txt'
     Invoke-PikoCheck powershell.exe @('-NoProfile', '-File', 'scripts/tests/Update-Piko.Tests.ps1') 'service-update-tests.txt'
     Invoke-PikoCheck pwsh @('-NoProfile', '-File', 'scripts/tests/Update-Piko.Tests.ps1') 'service-update-tests.txt'
+    Invoke-PikoCheck powershell.exe @('-NoProfile', '-File', 'scripts/tests/Backup-PikoInstallation.Tests.ps1') 'recovery-backup-tests.txt'
+    Invoke-PikoCheck pwsh @('-NoProfile', '-File', 'scripts/tests/Backup-PikoInstallation.Tests.ps1') 'recovery-backup-tests.txt'
     Invoke-PikoCheck cargo @('clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings') 'clippy.txt'
     Invoke-PikoCheck cargo @('test', '--workspace', '--locked', '--', '--show-output') 'rust-tests.txt'
     Invoke-PikoCheck cargo @('build', '--workspace', '--release', '--locked') 'rust-build.txt'

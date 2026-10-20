@@ -95,3 +95,19 @@ The new source checkpoint triggers the full remote pipeline separately; the prio
 green run is not evidence for these changes. No real Firewall/installation change
 was made. Packet blocking, OS restart and alternate-admin global-mutex access
 remain qualification work, as does installed recovery from the manifest mismatch.
+
+## 2026-10-20: original installation preserved for recovery
+
+Backup-PikoInstallation.ps1 holds read handles for all six originals while copying
+and checks each destination SHA-256. It preserves the original inconsistent
+manifest, configuration and ACL metadata; it neither executes binaries nor copies
+the event archive. Destination creation uses an explicit private ACL for caller,
+SYSTEM and administrators. Reparse paths and untrusted writable destination
+ancestors are refused. A completion report is written only after successful copies.
+The backup does not establish source authenticity or implement restoration.
+
+PowerShell7 and Windows PowerShell5.1 fixtures pass: WhatIf/no writes, six exact
+copies with manifest mismatch retained, private ACL and existing-destination
+refusal. A real six-file backup completed successfully in a private ProgramData
+directory. Service state remained Running; no installed file was replaced and no
+event archive was changed. Machine-specific copy metadata is intentionally excluded.

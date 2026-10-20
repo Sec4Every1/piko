@@ -32,6 +32,16 @@ Read only the active item's relevant sources; preserve existing work.
   replacement. Do not overwrite the manifest to bypass validation or restore old
   executables against newer evidence. Existing same-version updater (ADR 0034)
   correctly refuses inconsistent installations.
+- Recovery prerequisite completed: Backup-PikoInstallation.ps1 preserves six
+  original files, hashes and ACL metadata in a private caller/SYSTEM/admin copy.
+  Real copy completed under ProgramData/piko-recovery-*/originals; manifest
+  discrepancy retained, event archive excluded, service left running. Locate the
+  recovery-copy.json locally; do not publish it. PS5.1/7 fixtures pass. No binary
+  replacement/recovery has yet been implemented or applied.
+- Recovery-backup checkpoint is committed locally. Publish after inspecting the
+  still-running Windows job for e0b6217 (run 39441703542), avoiding cancellation
+  of that cold build. Its dependency audit passed; Windows was still running at
+  the last check. Do not confuse either result with this new script's CI status.
 - Then qualify real packet blocking, undo, desktop/service restart and alternate
   administrator credentials. APP-01 remains VERIFIED-LOCAL, not complete endpoint
   protection. APP-02 file/system/update capabilities remain separate queued work.
