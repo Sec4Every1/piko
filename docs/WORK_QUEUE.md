@@ -11,8 +11,8 @@ have a concrete user-visible result, tests/evidence and accurate capability stat
 
 | ID | Priority / state | Outcome and acceptance | Dependencies / relevant files |
 |---|---|---|---|
-| DEV-01 | P0 ACTIVE | Establish a green remote CI baseline. Review pending fixes, run matching toolchains/audits, resolve actual failures without relaxing gates; record commit/run/evidence. | Pending changes; `.github/workflows/ci.yml`, `scripts/ci-checks.ps1`, `scripts/ci-sbom.ps1`, `deny.toml` |
-| DEV-02 | P0 BLOCKED | Qualify the updated Windows installation: service/UI versions agree, account categories work over real IPC, restart/reboot/uninstall/reader ACL failures are visible. Use benign fixtures; record Windows build and limitations. | Compiled package exists; current installed service fails manifest hash validation; installer has no upgrade path. Preserve data and resolve upgrade before lifecycle tests. Installer scripts, ADR 0008/0031/0033. Review authorized scope before changing a running installation. |
+| DEV-01 | P0 DONE | Green remote CI baseline: commit 6b8293f, run 39429554940; Windows checks and dependency audit both passed. | `.github/workflows/ci.yml`, `scripts/ci-checks.ps1`, `scripts/ci-sbom.ps1`, `deny.toml`; evidence in VALIDATION.md |
+| DEV-02 | P0 BLOCKED | Qualify the updated Windows installation: service/UI versions agree, account categories work over real IPC, restart/reboot/uninstall/reader ACL failures are visible. Use benign fixtures; record Windows build and limitations. | Same-version refresh/rollback implemented and fixture-tested (ADR 0034); current installed service fails manifest hash validation and is deliberately refused. Establish installed binary provenance and verified recovery before live qualification; preserve data/configuration/original binaries. Installer scripts, ADR 0008/0031/0033/0034. Review authorized scope before changing a running installation. |
 | APP-01 | P1 READY | Complete application network-rule workflow qualification: discovery, multi-select, prepare/confirm, both directions, partial failure, restart and undo; show effective supported controls clearly. | Existing app-control, helper, AppGrid; ADR 0010 and relevant network-control ADRs. Inspect current implementations before changing them. |
 | APP-02 | P1 READY | Define and implement the first usable per-app capability contract. Compare supported Windows isolation mechanisms for outside-install paths/system files/update writes; implement one real enforceable scope with verification and undo. Unsupported controls stay explicit. | APP-01; requirements 20-23/42, architecture addendum, existing AppContainer path. No generic file blocking claim from path-only Firewall rules. |
 | DET-01 | P2 BLOCKED | Behavioral/ransomware slice with measured file-change/canary signals, benign replay, bounded noise, evidence and remediation. Define measurable coverage and loss before claiming prevention. | Reliable sensors + APP-02 feasibility; requirements 24-27. Kernel mediation, if needed, is its own qualified milestone. |
@@ -28,12 +28,14 @@ them; do not mark an entire requirement complete from a small monitoring slice.
 
 ## Active task brief (replace when work starts)
 
-- ID: DEV-01
-- Result: green remote CI for the reviewed development checkpoint.
-- First action: inspect pending diff, lockfile/toolchain policy and last remote run.
-- Acceptance: Windows checks + dependency audit pass for a recorded commit;
-  unresolved infrastructure/credential constraints are explicit.
-- Delegation: one independent CI/audit helper if needed; coordinator owns integration.
+- ID: DEV-02 (blocked on verified recovery from installed manifest mismatch).
+- Result: qualify the updated installation while preserving existing evidence.
+- First action: review NEXT_SESSION diagnosis and ADR 0034; retain original
+  binaries/configuration and establish verified recovery before live changes.
+- Acceptance: consistent manifest/binaries, service/UI IPC, lifecycle/ACL failure
+  checks with recorded platform and limitations. Do not run old backups against
+  newer evidence or rewrite a manifest simply to make validation pass.
+- Delegation: at most one bounded independent review; coordinator owns integration.
 
 ## Completion evidence
 

@@ -1,46 +1,51 @@
 # Piko: resume checkpoint
 
-Updated: 2026-10-20. Read with root AGENTS.md; verify live state before mutation.
+Updated: 2026-10-20. Start with root AGENTS.md and docs/WORK_QUEUE.md.
+Verify git status and live state before mutation; read only task-relevant files.
 
-## Current outcome
-- Account lifecycle monitoring added: Security 4720/4722/4725/4726 version 0,
-  affected account vs requester, filters, five-row pages, details and raw evidence.
-  ADR 0033; this does not enforce account creation/deletion policy.
-- CI fixes prepared: two new Clippy warnings, explicit internal dependency versions,
-  SBOM package discovery from cargo metadata. Audit gates were not disabled.
-- Packaging no longer embeds the packager's Windows SID in installer instructions.
+## Delivered checkpoint
+- Public development commit: 6b8293f. Account lifecycle monitoring (ADR 0033),
+  pinned Rust 1.99.0, native CI portability and installed hash preflight.
+- Same-version installer refresh with protected staging, binary backup and rollback
+  (ADR 0034). Cross-version migration and signed updates remain unsupported.
+- Dependency audits repaired, Vitest 5.0.5, exact-version MPL reviews and five
+  verified upstream source archives included in development packages.
+- AGENTS.md defines continuation/delegation/checks; WORK_QUEUE.md orders remaining
+  work. These files replace repeated chat-history reconstruction.
 
-## Evidence from last development run
-- Workspace fmt/Clippy passed; Rust workspace tests: 147 passed, two ignored.
-- Frontend check clean; 89 unit tests passed; identity Playwright scenario passed.
-- Runtime workspace + native desktop release builds passed.
-- `scripts/package.ps1 -Profile release` succeeded; four executable hashes verified.
-- Package: `artifacts/piko-0.2.0-windows-x64-release` (ignored, local only).
-- Long Rust test evidence: `.build/account-workspace-tests.txt` (ignored/local;
-  may be absent on another checkout). Summary in docs/VALIDATION.md.
+## Verification
+- Full local scripts/ci-sbom.ps1 passed: both Rust dependency graphs, npm audit
+  (zero vulnerabilities), 14 Rust SBOMs plus frontend SBOM, unchanged lockfiles.
+- Frontend: 89 tests, check/build pass. Earlier account Playwright scenario passed.
+- Native ETW/process targeted tests pass; remote Windows job for 5acb14a passed
+  full tests, desktop build and IPC smoke (run 39427136418).
+- Read-only service preflight: nine fixtures per shell. Refresh/rollback: ten
+  fixtures per shell. Both Windows PowerShell 5.1 and PowerShell 7 pass locally.
+- Local release package refreshed: artifacts/piko-0.2.0-windows-x64-release.
+  Four executable checksums, updater and five source archives verified.
+- Remote CI for 6b8293f: run 39429554940, Windows and dependency jobs both passed.
+  DEV-01 complete. Ignored .build/ evidence is local and not portable.
 
-## Outstanding delivery state
-- Development checkpoint is being published for DEV-01. Verify git status for follow-up edits.
-- Prior baseline main commit: 90e6d30. Read git log for the current checkpoint.
-- Last inspected CI run 39390516235 failed; the local corrections above have not
-  been verified by a subsequent remote run. Local cargo-deny audit was not run.
-- Local Rust/Clippy was 1.93; remote run used 1.99. Matching-toolchain verification
-  can find new diagnostics that the local linter misses.
-- The compiled package has been refreshed; the active installed service has NOT
-  been updated/qualified for these changes. Do not report it as deployed.
+## Installed-runtime boundary / next action
+- Installed service remains running and was NOT updated or restarted.
+- Its piko-service.exe differs from its installed manifest; updater correctly
+  refuses this inconsistency. Do not rewrite the manifest or uninstall to bypass it.
+- Read-only comparison: one historical installed backup matches that manifest;
+  no scanned historical backup or four local build/package candidates matches the
+  current installed service. This suggests a stale manifest, not proven provenance
+  of the current executable. Do not restore old binaries against newer evidence.
+- Next, DEV-02: establish
+  provenance of installed binaries and design verified recovery from the mismatch,
+  preserving configuration, evidence and original binaries before any live change.
+  Installation/reboot/uninstall qualification remains open; APP-01 follows.
+- Use existing authorization for publication and approved OS changes. Request only
+  genuinely missing scope; don't repeat already granted permission requests.
 
-## Next action
-Work queue DEV-01 first: inspect pending changes and verify remote CI at a reviewed
-checkpoint using existing publication authorization where applicable. Resolve
-remaining build/audit failures, then DEV-02 installation qualification and APP-01/02.
-Check authorization scope for persistent OS changes; do not re-ask for granted scope.
-
-## Permanent product constraints (details in linked docs)
-- MIT; no personal identifiers, runtime DBs, secrets or logs in public source.
-- Minimal UI, grouped alerts, application names, detail/raw on demand.
-- 12 months of all retained security events within 2 GiB; suspend collection on
+## Permanent product constraints
+- MIT; keep personal identifiers, runtime databases, secrets and logs out of source.
+- Minimal UI, grouped alerts, application names, details/raw on demand.
+- Preserve retained security events for 12 months within 2 GiB; stop collection on
   capacity exhaustion rather than silently discard unexpired evidence.
-- Existing noise policy/aggregation is contextual, not a universal trust allowlist.
+- Contextual noise filtering is not a universal trusted-loader allowlist.
 
-Replace this checkpoint after a completed milestone or interruption. Keep it short;
-do not duplicate the 116 requirements, old chat or full test output.
+Replace this checkpoint at the next milestone; don't append a chat transcript.

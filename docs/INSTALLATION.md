@@ -117,8 +117,8 @@ fra PC e runner. Gli aggiornamenti del toolchain richiedono verifica esplicita.
 ## Aggiornamento limitato della stessa versione
 
 Il percorso interattivo usa Update-Piko.ps1 quando trova il servizio esistente.
-Valida il pacchetto e l'installazione prima di fermare il monitor; conserva backup
-protetto dei binari precedenti, manifest, configurazione e permessi. I dati non
+Valida il pacchetto e l'installazione prima di fermare il monitor; crea un backup
+protetto dei binari precedenti e del manifest. Mantiene configurazione e permessi. I dati non
 vengono cancellati né migrati. Una verifica fallita tenta il rollback e conserva
 il materiale diagnostico. Un monitor inizialmente fermo viene avviato brevemente
 per la verifica e poi riportato fermo. Servono UAC e dashboard/client chiusi.

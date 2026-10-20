@@ -59,3 +59,20 @@ and Windows PowerShell5.1, including source-stage tampering, initial stopped
 state and rollback after start/IPC-version failure. No real update was applied.
 Last remote Windows job for5acb14a succeeded (run39427136418); dependency fixes
 and the updater require the next reviewed CI checkpoint.
+
+Full scripts/ci-sbom.ps1 passed locally at 6b8293f: advisory, bans, licenses and
+sources checks for both Rust graphs; 14 Rust SBOMs plus frontend SBOM; npm audit
+zero vulnerabilities; no lockfile drift. Refreshed local release package contains
+four manifest-verified executables, updater and five checksum-verified MPL source
+archives. This packages existing compiled binaries; it does not update the live
+installation. Remote run [39429554940](https://github.com/Sec4Every1/piko/actions/runs/39429554940)
+for commit 6b8293f1ce81d1bf8aea590e4d7431e02d9f1951 completed successfully:
+both Windows checks (tests/lint/desktop build/IPC smoke) and dependency audit passed.
+DEV-01 is complete; this does not qualify the installed runtime or a signed release.
+
+Read-only installation diagnosis found a historical protected service backup that
+matches the installed manifest. None of the scanned backups or four available
+local build/package candidates matches the current installed service executable.
+This is consistent with a stale development manifest, but does not establish the
+current executable's provenance. No binary/manifest was overwritten and no old
+binary was run against current evidence.
