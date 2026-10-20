@@ -529,8 +529,9 @@ fn metadata_string(bytes: &[u8], offset: u32) -> io::Result<String> {
         ));
     }
     let mut units = Vec::new();
-    for chunk in bytes[offset..].chunks_exact(2).take(129) {
-        let unit = u16::from_le_bytes([chunk[0], chunk[1]]);
+    let (chunks, _) = bytes[offset..].as_chunks::<2>();
+    for chunk in chunks.iter().take(129) {
+        let unit = u16::from_le_bytes(*chunk);
         if unit == 0 {
             return String::from_utf16(&units).map_err(io::Error::other);
         }
