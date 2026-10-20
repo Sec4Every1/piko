@@ -26,7 +26,16 @@ if (!$Elevated) {
     exit 1
 }
 
-$installer = Join-Path $PSScriptRoot 'Install-Piko.ps1'
-if (!(Test-Path -LiteralPath $installer)) { throw 'Install-Piko.ps1 is missing from this package.' }
-& $installer -ViewerSid $ViewerSid -EnableEtw
+$existingService = Get-Service -Name piko -ErrorAction SilentlyContinue
+if ($existingService) {
+    $updater = Join-Path $PSScriptRoot 'Update-Piko.ps1'
+    if (!(Test-Path -LiteralPath $updater)) { throw 'Update-Piko.ps1 is missing from this package.' }
+    # An existing installation keeps its enrolled viewer, policy and evidence.
+    # The updater independently validates the installation and may refuse it.
+    & $updater -PackagePath $PSScriptRoot
+} else {
+    $installer = Join-Path $PSScriptRoot 'Install-Piko.ps1'
+    if (!(Test-Path -LiteralPath $installer)) { throw 'Install-Piko.ps1 is missing from this package.' }
+    & $installer -ViewerSid $ViewerSid -EnableEtw
+}
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -46,3 +46,16 @@ covered by nine benign mocked checks on both PowerShell7 and Windows PowerShell5
 On this machine it refused an installed service/manifest hash mismatch and left
 the service running. The refreshed package differs from installed binaries;
 upgrade/reboot/uninstall qualification remains incomplete. No live update occurred.
+
+Desktop dependency audit now runs through its policy: five existing unchanged MPL
+crates have documented exact-version review and release source bundles, verified
+against Cargo.lock. Core advisory checks are unchanged; no vulnerability exception
+was added. Vitest upgraded to5.0.5:89 tests, frontend check/build pass; npm audit
+reports zero vulnerabilities. cargo-cyclonedx0.5.9 generated14 actual package-named
+.cdx.json files; collector corrected to those names (not nonexistent bom.json).
+
+Same-version refresh: ten full-script fixture scenarios passed on PowerShell7
+and Windows PowerShell5.1, including source-stage tampering, initial stopped
+state and rollback after start/IPC-version failure. No real update was applied.
+Last remote Windows job for5acb14a succeeded (run39427136418); dependency fixes
+and the updater require the next reviewed CI checkpoint.

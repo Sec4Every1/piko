@@ -14,6 +14,32 @@ allow = [
     "CC0-1.0", "BSL-1.0", "Unlicense",
 ]
 
+# Reviewed unchanged Tauri dependencies; exact versions only. See docs/MPL_REVIEW.md.
+[[licenses.exceptions]]
+name = "cssparser"
+version = "=0.37.0"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "cssparser-macros"
+version = "=0.7.1"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "dtoa-short"
+version = "=0.3.5"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "option-ext"
+version = "=0.2.0"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "selectors"
+version = "=0.38.0"
+allow = ["MPL-2.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

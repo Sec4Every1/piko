@@ -31,3 +31,6 @@
 /runtime/
 /publication-private/
 
+
+# Generated software bills of materials; local copies may contain build paths.
+*.cdx.json

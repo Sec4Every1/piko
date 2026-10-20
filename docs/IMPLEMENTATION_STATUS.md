@@ -18,3 +18,9 @@ The dashboard separates grouped, human-readable alerts from event details and ra
 General mediation of application access to files, registry and devices is not implemented. Piko does not provide a kernel driver, self-defense, general behavioral detection, automatic patching, signed updates, fleet management, or a complete recovery system. Network enforcement and service collection require testing on the target Windows configuration. The event store is local and does not protect against a sufficiently privileged local attacker; its integrity chain is not an external trust anchor.
 
 See [the requirement matrix](REQUIREMENT_MATRIX.md), [security model](SECURITY_MODEL.md), [installation guide](INSTALLATION.md), and [user manual](MANUALE_UTENTE.md). Reproducible checks and qualification gaps are in [VALIDATION.md](VALIDATION.md). Do not treat local development results as release qualification.
+
+2026-10-20: same-version binary refresh is implemented with hash preflight,
+protected staging/backup and attempted rollback (ADR0034), routed from the
+interactive installer. Mocked tests passed on PowerShell5.1/7. Live refresh is
+not qualified and refuses the currently inconsistent installed manifest. Secure
+signed updates, cross-version migration and automatic crash recovery remain open.

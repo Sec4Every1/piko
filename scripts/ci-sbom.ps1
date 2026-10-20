@@ -12,7 +12,7 @@ function Invoke-PikoDependencyCheck {
     if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
 
-function Get-PikoSbomDirectories {
+function Get-PikoSbomPackages {
     param([string]$Root)
     foreach ($pikoManifest in @('Cargo.toml', 'apps/desktop-ui/src-tauri/Cargo.toml')) {
         $pikoMetadataJson = & cargo metadata --locked --no-deps --format-version 1 --manifest-path (Join-Path $Root $pikoManifest)
@@ -24,7 +24,7 @@ function Get-PikoSbomDirectories {
             if ([IO.Path]::IsPathRooted($pikoDirectory) -or $pikoDirectory -eq '..' -or $pikoDirectory.StartsWith('../')) {
                 throw "Workspace package is outside the repository: $($pikoPackage.name)"
             }
-            $pikoDirectory
+            [pscustomobject]@{Directory=$pikoDirectory; Name=$pikoPackage.name}
         }
     }
 }
@@ -39,11 +39,11 @@ try {
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
     Invoke-PikoDependencyCheck cargo @('cyclonedx', '--manifest-path', 'apps/desktop-ui/src-tauri/Cargo.toml', '--format', 'json', '--all', '--spec-version', '1.5', '--target', 'x86_64-pc-windows-msvc') 'rust-sbom.txt'
 
-    $pikoManifests = @(Get-PikoSbomDirectories -Root $pikoRoot | Sort-Object -Unique)
-    foreach ($pikoDirectory in $pikoManifests) {
-        $pikoBom = Join-Path $pikoRoot "$pikoDirectory/bom.json"
-        if (-not (Test-Path -LiteralPath $pikoBom)) { throw "Expected SBOM is missing: $pikoDirectory/bom.json" }
-        $pikoName = $pikoDirectory.Replace('/', '-') + '.cdx.json'
+    $pikoPackages = @(Get-PikoSbomPackages -Root $pikoRoot | Sort-Object Directory -Unique)
+    foreach ($pikoPackage in $pikoPackages) {
+        $pikoName = $pikoPackage.Name + '.cdx.json'
+        $pikoBom = Join-Path $pikoRoot ($pikoPackage.Directory + '/' + $pikoName)
+        if (-not (Test-Path -LiteralPath $pikoBom)) { throw "Expected SBOM is missing: $($pikoPackage.Directory)/$pikoName" }
         Copy-Item -LiteralPath $pikoBom -Destination (Join-Path $pikoEvidence $pikoName)
     }
 

@@ -12,8 +12,9 @@ clic su **Install-Piko.cmd**. La richiesta UAC di Windows è necessaria per il
 servizio protetto; l’installer ricava da solo l’account che userà la dashboard,
 installa il monitor e apre piko al termine. Non copiare comandi o SID. La UI si
 avvia come utente normale. Servizio e archivio si rimuovono con
-**Uninstall-Piko.ps1** (richiede UAC e conserva i dati). Gli aggiornamenti in-place
-sono ancora in sviluppo.
+**Uninstall-Piko.ps1** (richiede UAC e conserva i dati). Se il servizio esiste,
+Install-Piko.cmd seleziona l'aggiornamento della stessa versione. Chiudere prima
+dashboard e client installati. Migrazioni fra versioni diverse restano da qualificare.
 
 Per provare piko senza installare il servizio, fare doppio clic su
 **Open-Piko.cmd**. Avvia monitor e UI; i dati sono in `%LocalAppData%\piko-monitor`.
@@ -61,9 +62,9 @@ Verifica da utente autorizzato:
 ```
 
 Per disinstallare eseguire `Uninstall-Piko.ps1` come amministratore. Conserva
-sempre i dati. Aggiornamenti in-place e importazione di dati da una precedente
-installazione richiedono ancora una procedura di migrazione; l'installer rifiuta
-di sovrascrivere directory esistenti.
+sempre i dati. L'importazione e le migrazioni fra versioni richiedono ancora una
+procedura qualificata; non usare disinstallazione/reinstallazione per aggirare
+un'incongruenza del manifest o una directory dati esistente.
 
 `Install-Piko.ps1 -ViewerSid <SID> -WhatIf` verifica il pacchetto e mostra le
 modifiche previste senza installare. L'installazione effettiva richiede un token
@@ -112,3 +113,19 @@ Le build di sviluppo e CI usano il toolchain Rust MSVC fissato in
 `rust-toolchain.toml` (1.99.0). L'installazione di questo toolchain affiancato non
 cambia il toolchain globale: evita differenze involontarie di compilatore e lint
 fra PC e runner. Gli aggiornamenti del toolchain richiedono verifica esplicita.
+
+## Aggiornamento limitato della stessa versione
+
+Il percorso interattivo usa Update-Piko.ps1 quando trova il servizio esistente.
+Valida il pacchetto e l'installazione prima di fermare il monitor; conserva backup
+protetto dei binari precedenti, manifest, configurazione e permessi. I dati non
+vengono cancellati né migrati. Una verifica fallita tenta il rollback e conserva
+il materiale diagnostico. Un monitor inizialmente fermo viene avviato brevemente
+per la verifica e poi riportato fermo. Servono UAC e dashboard/client chiusi.
+
+`Update-Piko.ps1 -PreflightOnly -PackagePath .` effettua solo i controlli preliminari;
+`-WhatIf` mostra l'operazione senza applicarla. Versioni diverse, hash incoerenti,
+link e ACL scrivibili da soggetti non autorizzati sono rifiutati. Non correggere il
+manifest per forzare l'aggiornamento. Le interruzioni di alimentazione richiedono
+recupero dai backup: il recupero automatico non è implementato. ADR0034 riporta
+copertura e limiti; la prova sull'installazione reale resta da qualificare.

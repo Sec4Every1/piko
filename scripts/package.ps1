@@ -22,7 +22,7 @@ $hashes = foreach ($binary in $binaries) {
 }
 $manifest = @{product='piko'; version='0.2.0'; architecture='x64'; profile=$Profile; signed=$false; files=@($hashes)} | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $destination 'manifest.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
-foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
+foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Update-Piko.ps1','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
 Copy-Item -LiteralPath (Join-Path $workspace 'LICENSE') -Destination (Join-Path $destination 'LICENSE') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination (Join-Path $destination 'README.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\INSTALLATION.md') -Destination (Join-Path $destination 'LEGGIMI.md') -Force
@@ -30,6 +30,8 @@ Copy-Item -LiteralPath (Join-Path $workspace 'docs\RESPONSE.md') -Destination (J
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\MANUALE_UTENTE.md') -Destination (Join-Path $destination 'MANUALE_UTENTE.md') -Force
 [IO.File]::WriteAllText((Join-Path $destination 'INSTALL-COMMAND.txt'), "Fare doppio clic su Install-Piko.cmd in questa cartella e confermare la richiesta Windows.`r`nL'installer rileva automaticamente l'utente sul PC di destinazione.`r`n", (New-Object Text.UTF8Encoding($false)))
 Write-Output $destination
+
+& (Join-Path $PSScriptRoot 'Copy-PikoThirdPartySources.ps1') -Destination $destination
 
 
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\REQUIREMENT_MATRIX.md') -Destination (Join-Path $destination 'STATO_REQUISITI.md') -Force
