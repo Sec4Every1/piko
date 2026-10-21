@@ -418,6 +418,81 @@ mod tests {
     }
 }
 #[tokio::test]
+async fn parent_lifetime_survives_storage_query_and_ipc_response(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use piko_common_model::ObservedProcess;
+    use piko_event_schema::SecurityEvent;
+    let path = std::env::temp_dir().join(format!("piko-parent-query-{}.db", Uuid::new_v4()));
+    let (client, host, _, _) = StorageClient::start(path, StorageConfig::default()).await?;
+    let parent = ObservedProcess {
+        instance_id: None,
+        pid: 7,
+        parent_pid: 0,
+        name: "launcher.exe".into(),
+        executable: Some("C:\\Example\\launcher.exe".into()),
+        creation_filetime: Some(132_000_000_000_000_001),
+        sid: None,
+        session_id: Some(1),
+        access_error: None,
+    };
+    let mut child = parent.clone();
+    child.pid = 42;
+    child.parent_pid = 7;
+    child.creation_filetime = Some(133_000_000_000_000_001);
+    child.name = "example.exe".into();
+    let instance =
+        piko_win_sensors::process_instance(host, &child).ok_or("missing child identity")?;
+    let record = piko_win_sensors::normalize_observation(
+        piko_win_sensors::Observation {
+            transition: "observed",
+            at: 1_700_000_000_000,
+            process: Some(child),
+            parent: Some(parent),
+            connection: None,
+            udp: None,
+        },
+        SecurityEvent::heartbeat(host, Uuid::new_v4(), 1, 1_700_000_000_001, 1),
+    )?;
+    let event_id = record.event.event_id;
+    let evidence_id = record
+        .event
+        .raw_evidence_reference
+        .ok_or("missing raw evidence")?;
+    assert_eq!(client.try_append(vec![record])?.await??, 1);
+    let answer = client
+        .read(
+            Command::GetInvestigation {
+                process_instance: instance,
+            },
+            Instant::now() + std::time::Duration::from_secs(3),
+        )
+        .await
+        .map_err(|e| e.message)?;
+    let answer: ApiData = serde_json::from_slice(&serde_json::to_vec(&answer)?)?;
+    let ApiData::Investigation(graph) = answer else {
+        return Err("unexpected IPC response".into());
+    };
+    assert_eq!(graph.events_considered, 1);
+    let edge = graph
+        .edges
+        .iter()
+        .find(|e| e.relation == "observed_parent")
+        .ok_or("missing parent edge")?;
+    assert_eq!(edge.event_ids, [event_id]);
+    assert_eq!(edge.evidence_ids, [evidence_id]);
+    assert_eq!(
+        graph
+            .nodes
+            .iter()
+            .find(|n| n.id == edge.target)
+            .ok_or("missing parent node")?
+            .label,
+        "C:\\Example\\launcher.exe"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn calendar_retention_runs_before_append_and_reports_retained_count(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::temp_dir().join(format!("piko-worker-retention-{}.db", Uuid::new_v4()));

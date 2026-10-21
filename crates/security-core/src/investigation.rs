@@ -1,4 +1,4 @@
-//! Evidence-backed associations only: no attack verdict, parent-PID inference or direction.
+//! Evidence-backed associations only: no attack verdict or initiating-actor inference.
 use piko_event_schema::SecurityEvent;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -93,22 +93,50 @@ pub fn investigate(
             .as_ref()
             .and_then(|id| id.sid.as_deref())
         {
-            associations.push(("identity", sid, "observed_identity"));
+            associations.push(("identity", sid.to_string(), sid, "observed_identity"));
+        }
+        if event.event_type.starts_with("process.snapshot.") {
+            if let (Some(child), Some(parent)) = (&event.process, &event.parent_process) {
+                if let Some(parent_instance) = parent
+                    .instance_id
+                    .filter(|id| !id.is_nil() && *id != instance)
+                {
+                    if child.pid != parent.pid
+                        && matches!((parent.creation_time_unix_ms, child.creation_time_unix_ms), (Some(p), Some(c)) if p <= c && p >= 0 && c < event.observation_time)
+                    {
+                        if let Some(label) =
+                            parent.executable_path.as_deref().or(parent.name.as_deref())
+                        {
+                            associations.push((
+                                "parent_process",
+                                parent_instance.to_string(),
+                                label,
+                                "observed_parent",
+                            ));
+                        }
+                    }
+                }
+            }
         }
         if event.event_type.starts_with("network.") {
             if let Some(target) = &event.target {
                 if target.kind == "tcp_endpoint" {
-                    associations.push(("tcp_endpoint", target.identifier.as_str(), "observed_tcp"));
+                    associations.push((
+                        "tcp_endpoint",
+                        target.identifier.clone(),
+                        target.identifier.as_str(),
+                        "observed_tcp",
+                    ));
                 }
             }
         }
-        for (kind, label, relation) in associations {
+        for (kind, identity, label, relation) in associations {
             // Schema permits large user text; graph output has its own display/byte budget.
             if label.len() > 8192 {
                 graph.graph_truncated = true;
                 continue;
             }
-            let key = (kind.to_string(), label.to_string());
+            let key = (kind.to_string(), identity);
             let target = if let Some(id) = nodes.get(&key) {
                 id.clone()
             } else {
@@ -216,5 +244,45 @@ mod tests {
         let graph = investigate(id, &events, false);
         assert!(graph.graph_truncated);
         assert_eq!(graph.nodes.len(), MAX_NODES);
+    }
+    #[test]
+    fn parent_edges_require_lifetime_and_preserve_distinct_instances_with_same_name() {
+        let instance = Uuid::new_v4();
+        let mut first = record(instance);
+        first.event_type = "process.snapshot.observed".into();
+        first.process.as_mut().unwrap().creation_time_unix_ms = Some(10);
+        let mut parent = first.process.clone().unwrap();
+        parent.pid = 7;
+        parent.instance_id = Some(Uuid::new_v4());
+        parent.creation_time_unix_ms = Some(5);
+        parent.name = Some("launcher.exe".into());
+        first.parent_process = Some(parent);
+        let mut second = first.clone();
+        second.event_id = Uuid::new_v4();
+        second.parent_process.as_mut().unwrap().instance_id = Some(Uuid::new_v4());
+        let graph = investigate(instance, &[first.clone(), second], false);
+        assert_eq!(
+            graph
+                .edges
+                .iter()
+                .filter(|e| e.relation == "observed_parent")
+                .count(),
+            2
+        );
+        assert!(graph.edges.iter().all(|e| !e.event_ids.is_empty()));
+        for mutation in 0..4 {
+            let mut invalid = first.clone();
+            let parent = invalid.parent_process.as_mut().unwrap();
+            match mutation {
+                0 => parent.instance_id = None,
+                1 => parent.instance_id = Some(instance),
+                2 => parent.creation_time_unix_ms = Some(11),
+                _ => invalid.process.as_mut().unwrap().creation_time_unix_ms = Some(21),
+            }
+            assert!(!investigate(instance, &[invalid], false)
+                .edges
+                .iter()
+                .any(|e| e.relation == "observed_parent"));
+        }
     }
 }

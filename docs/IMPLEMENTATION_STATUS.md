@@ -4,6 +4,12 @@ Piko is an early-stage Windows security-monitoring prototype. It is not a comple
 
 ## Implemented areas
 
+2026-10-21: observed relationships include a one-hop Windows-reported parent
+lifetime resolved within a complete process snapshot, with creation-time/PID
+reuse checks and event/raw evidence. The compact view names the parent and marks
+observations as historical. This is not initiating-actor attribution, recursive
+ancestry or attack-path analysis. See ADR0039; live deployment remains unqualified.
+
 2026-10-20: account activity includes creation, enabling, disabling and deletion
 (Security 4720/4722/4725/4726, version 0), with affected/requesting identities,
 paged filters and original evidence. These are observed historical facts;

@@ -30,6 +30,8 @@ pub struct Observation {
     pub transition: &'static str,
     pub at: i64,
     pub process: Option<ObservedProcess>,
+    /// Same-snapshot parent lifetime, never resolved from a PID alone.
+    pub parent: Option<ObservedProcess>,
     pub connection: Option<ObservedConnection>,
     pub udp: Option<ObservedUdpEndpoint>,
 }
@@ -37,6 +39,7 @@ pub struct Observation {
 #[derive(Default)]
 struct History {
     processes: BTreeMap<String, ObservedProcess>,
+    parents: BTreeMap<String, ObservedProcess>,
     connections: BTreeMap<String, (ObservedConnection, Option<ObservedProcess>)>,
     udp: BTreeMap<String, (ObservedUdpEndpoint, Option<ObservedProcess>)>,
 }
@@ -57,6 +60,38 @@ fn connection_key(c: &ObservedConnection) -> String {
     )
 }
 
+fn observed_parent(
+    snapshot: &ObservationSnapshot,
+    child: &ObservedProcess,
+) -> Option<ObservedProcess> {
+    let child_time = child.creation_filetime?;
+    // Strictly before the snapshot (including the millisecond uncertainty): the
+    // ToolHelp PPID must not be attached to a PID replacement queried afterward.
+    if !snapshot.process_complete
+        || child.pid == child.parent_pid
+        || child.parent_pid == 0
+        || child.access_error.is_some()
+        || piko_win_platform::observations::filetime_unix_ms(child_time)?
+            >= snapshot.started_at_unix_ms
+    {
+        return None;
+    }
+    let mut candidates = snapshot
+        .processes
+        .iter()
+        .filter(|p| p.pid == child.parent_pid);
+    let parent = candidates.next()?;
+    if candidates.next().is_some()
+        || parent.access_error.is_some()
+        || parent.creation_filetime? >= child_time
+        || piko_win_platform::observations::filetime_unix_ms(parent.creation_filetime?)?
+            .is_negative()
+    {
+        return None;
+    }
+    Some(parent.clone())
+}
+
 impl History {
     fn update(&mut self, snapshot: &ObservationSnapshot) -> Vec<Observation> {
         let mut output = Vec::new();
@@ -66,16 +101,22 @@ impl History {
             .iter()
             .map(|p| (process_key(p), p.clone()))
             .collect();
+        let mut parents = BTreeMap::new();
         for (key, p) in &processes {
             let old = self.processes.get(key);
-            if old != Some(p) {
+            let parent = observed_parent(snapshot, p);
+            if old != Some(p) || self.parents.get(key) != parent.as_ref() {
                 output.push(Observation {
                     udp: None,
                     transition: if old.is_some() { "changed" } else { "observed" },
                     at,
                     process: Some(p.clone()),
+                    parent: parent.clone(),
                     connection: None,
                 });
+            }
+            if let Some(parent) = parent {
+                parents.insert(key.clone(), parent);
             }
         }
         if snapshot.process_complete {
@@ -86,6 +127,7 @@ impl History {
                         transition: "not_observed",
                         at,
                         process: Some(p.clone()),
+                        parent: None,
                         connection: None,
                     });
                 }
@@ -94,6 +136,7 @@ impl History {
         // Replace bounded baseline even on partial snapshots. Missing rows may be observed
         // anew next time; no absent process is ever inferred from a partial snapshot.
         self.processes = processes;
+        self.parents = parents;
         let by_pid: BTreeMap<_, _> = snapshot.processes.iter().map(|p| (p.pid, p)).collect();
         let mut connections = BTreeMap::new();
         for c in &snapshot.connections {
@@ -112,6 +155,7 @@ impl History {
                     transition: if old.is_some() { "changed" } else { "observed" },
                     at,
                     process: process.clone(),
+                    parent: None,
                     connection: Some(c.clone()),
                 });
             }
@@ -125,6 +169,7 @@ impl History {
                         transition: "not_observed",
                         at,
                         process: p.clone(),
+                        parent: None,
                         connection: Some(c.clone()),
                     });
                 }
@@ -154,6 +199,7 @@ impl History {
                     transition: if old.is_some() { "changed" } else { "observed" },
                     at,
                     process: process.clone(),
+                    parent: None,
                     connection: None,
                     udp: Some(endpoint.clone()),
                 });
@@ -167,6 +213,7 @@ impl History {
                         transition: "not_observed",
                         at,
                         process: process.clone(),
+                        parent: None,
                         connection: None,
                         udp: Some(endpoint.clone()),
                     });
@@ -248,6 +295,21 @@ pub fn normalize_observation(
             executable_path: None,
             creation_time_unix_ms: None,
         });
+    if let Some(parent) = observation.parent.as_ref().filter(|parent| {
+        observation.process.as_ref().is_some_and(|child| {
+            child.parent_pid == parent.pid
+                && child.pid != parent.pid
+                && matches!((parent.creation_filetime, child.creation_filetime), (Some(p), Some(c)) if p < c)
+        })
+    }) {
+        event.parent_process = Some(ProcessContext {
+            pid: parent.pid,
+            instance_id: process_instance(event.host_id, parent),
+            name: Some(parent.name.clone()),
+            executable_path: parent.executable.clone(),
+            creation_time_unix_ms: parent.creation_filetime.and_then(piko_win_platform::observations::filetime_unix_ms),
+        });
+    }
     event.logon_session = None;
     event.causal_parents.clear();
     event.correlation_ids.clear();
@@ -269,8 +331,8 @@ pub fn normalize_observation(
     event.raw_evidence_reference = Some(evidence_id);
     let bytes = serde_json::to_vec(&serde_json::json!({
         "schema": "piko.observation.v1", "transition": observation.transition, "observed_at": observation.at,
-        "process": observation.process, "connection": observation.connection, "udp_local_endpoint": observation.udp,
-        "semantics": "polling snapshot; absence is not a proven exit; PPID is not proven causality"
+        "process": observation.process, "parent_lifetime": observation.parent, "connection": observation.connection, "udp_local_endpoint": observation.udp,
+        "semantics": "polling snapshot; absence is not a proven exit; parent lifetime is resolved only within the same snapshot with strictly earlier creation; PPID is Windows-reported parentage, not proven initiating actor or causality"
     })).map_err(io::Error::other)?;
     event.validate().map_err(io::Error::other)?;
     Ok(EventRecord {
@@ -409,6 +471,88 @@ mod tests {
         assert_eq!(history.update(&s)[0].transition, "observed");
         s.processes.clear();
         assert_eq!(history.update(&s)[0].transition, "not_observed");
+    }
+    #[test]
+    fn parent_lifetime_is_same_snapshot_and_reuse_or_unknown_stays_unresolved() -> io::Result<()> {
+        let mut s = snapshot();
+        s.started_at_unix_ms = 1_700_000_000_000;
+        s.completed_at_unix_ms = s.started_at_unix_ms + 1;
+        let mut parent = process(132_000_000_000_000_001);
+        parent.pid = 7;
+        parent.parent_pid = 0;
+        parent.name = "launcher.exe".into();
+        parent.executable = Some("C:\\Example\\launcher.exe".into());
+        s.processes.push(parent.clone());
+        let host = Uuid::new_v4();
+        let mut history = History::default();
+        let observations = history.update(&s);
+        let child = observations
+            .into_iter()
+            .find(|o| o.process.as_ref().is_some_and(|p| p.pid == 42))
+            .ok_or_else(|| io::Error::other("missing child observation"))?;
+        let record = normalize_observation(
+            child,
+            SecurityEvent::heartbeat(host, Uuid::new_v4(), 1, s.completed_at_unix_ms, 1),
+        )?;
+        assert_eq!(
+            record
+                .event
+                .parent_process
+                .as_ref()
+                .and_then(|p| p.instance_id),
+            process_instance(host, &parent)
+        );
+        assert!(record.event.causal_parents.is_empty());
+        assert!(String::from_utf8(
+            record
+                .raw_evidence
+                .ok_or_else(|| io::Error::other("missing evidence"))?
+                .bytes
+        )
+        .map_err(io::Error::other)?
+        .contains("parent_lifetime"));
+        assert!(history.update(&s).is_empty());
+
+        s.process_complete = false;
+        assert!(observed_parent(&s, &s.processes[0]).is_none());
+        s.process_complete = true;
+
+        // Same PID, newer lifetime: historical child PPID cannot name this process.
+        s.processes[1].creation_filetime = Some(134_000_000_000_000_001);
+        let changed = history.update(&s);
+        let child = changed
+            .into_iter()
+            .find(|o| o.process.as_ref().is_some_and(|p| p.pid == 42))
+            .ok_or_else(|| io::Error::other("missing changed child"))?;
+        assert_eq!(child.transition, "changed");
+        let record = normalize_observation(
+            child,
+            SecurityEvent::heartbeat(host, Uuid::new_v4(), 2, s.completed_at_unix_ms, 2),
+        )?;
+        let unresolved = record
+            .event
+            .parent_process
+            .ok_or_else(|| io::Error::other("missing unresolved parent"))?;
+        assert_eq!(unresolved.pid, 7);
+        assert!(unresolved.instance_id.is_none() && unresolved.name.is_none());
+        s.processes[1] = parent.clone();
+        s.processes[1].creation_filetime = None;
+        assert!(observed_parent(&s, &s.processes[0]).is_none());
+        s.processes[1] = parent.clone();
+        s.processes[1].access_error = Some("unavailable".into());
+        assert!(observed_parent(&s, &s.processes[0]).is_none());
+        s.processes[1] = parent.clone();
+        s.processes.push(parent);
+        assert!(observed_parent(&s, &s.processes[0]).is_none());
+        s.processes.pop();
+        s.started_at_unix_ms = piko_win_platform::observations::filetime_unix_ms(
+            s.processes[0]
+                .creation_filetime
+                .ok_or_else(|| io::Error::other("missing creation time"))?,
+        )
+        .ok_or_else(|| io::Error::other("invalid creation time"))?;
+        assert!(observed_parent(&s, &s.processes[0]).is_none());
+        Ok(())
     }
     #[test]
     fn ambiguous_connection_does_not_borrow_pid_identity_or_runtime_actor() -> io::Result<()> {

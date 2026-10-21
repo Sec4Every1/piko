@@ -13,3 +13,8 @@ it('rejects mismatched instances, dangling links, false relations and unbounded 
   }
   expect(() => parseInvestigation({ ...graph, nodes: [...graph.nodes, graph.nodes[1]] }, instance)).toThrow();
 });
+it('accepts an evidence-backed parent lifetime and rejects a parent edge to an account', () => {
+  const parent = { ...graph, nodes: [graph.nodes[0], { id: 'node-1', kind: 'parent_process', label: 'launcher.exe' }], edges: [{ ...graph.edges[0], relation: 'observed_parent' }] };
+  expect(parseInvestigation(parent, instance).nodes[1].label).toBe('launcher.exe');
+  expect(() => parseInvestigation({ ...parent, nodes: graph.nodes }, instance)).toThrow();
+});

@@ -1,5 +1,26 @@
 # Validation
 
+## 2026-10-21: observed parent lifetime (ADR0039)
+
+Sensor/core/storage suites: 61 passed. Service suite: 11 passed; includes the
+normalized parent record -> real storage worker/query -> IPC JSON roundtrip.
+Sensor tests cover reused/unknown/duplicate/inaccessible parent, partial snapshot,
+snapshot-start uncertainty and changed resolution; core keeps same-name lifetime
+nodes distinct and rejects missing/incompatible identity/time. Targeted Clippy
+passed, frontend check clean, 3 contract tests and 4 affected browser scenarios
+passed. Frontend production build and runtime/desktop release rebuilds passed;
+installed service remains unchanged.
+
+## 2026-10-21: STORE-02 pinned-reader capacity regression
+
+`cargo test -p piko-event-storage --test pinned_wal -- --nocapture`: passed.
+Real SQLite read snapshot, 8-MiB budget; 196 accepted records, aggregate peak
+8,305,352 bytes, WAL 8,202,952 bytes. Explicit refusal preserved all records;
+reader release and verified TRUNCATE allowed the refused append, unchanged prior
+integrity/head. Changed-crate test Clippy passed. This is empirical coverage,
+not a proof of worst-case admission for other writers. ADR0038 records the audit.
+Published checkpoint 706abfa: CI run 39558256349 was in progress when inspected.
+
 Validation evidence in this repository is limited to reproducible automated checks. Machine-specific logs, databases, screenshots, and installation records are intentionally excluded.
 
 Run the checks locally from the repository root:

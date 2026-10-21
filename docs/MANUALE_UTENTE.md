@@ -387,8 +387,12 @@ Elimina rimuove soltanto la ricerca salvata, non gli eventi.
 
 In **Attivita applicazioni**, seleziona un programma e premi **Carica relazioni**.
 La stessa vista e disponibile nei dettagli di un evento con identita di istanza.
-Il diagramma collega quella precisa istanza agli account SID e agli endpoint TCP
-osservati nello storico. Clicca un collegamento, poi **Osservazione 1**, **2**, ecc.
+Il diagramma collega quella precisa istanza agli account SID, agli endpoint TCP
+e ai processi padre identificati nello storico. Il padre appare con il suo nome
+solo quando uno snapshot completo consente di distinguerne l'istanza dal PID:
+un'identita mancante o incompatibile resta sconosciuta. La parentela dichiarata
+da Windows non prova chi ha avviato un'azione. Queste sono osservazioni storiche,
+non necessariamente lo stato attuale. Clicca un collegamento, poi **Osservazione 1**, **2**, ecc.
 per aprire i dettagli. **Leggi evidenza originale** carica il JSON raccolto;
 **Evento grezzo** mostra il record normalizzato. I dati grezzi restano opzionali.
 

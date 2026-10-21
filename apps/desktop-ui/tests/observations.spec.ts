@@ -57,6 +57,28 @@ test('relationships load on request and expose supporting observations', async (
   await expect(page.getByRole('alert')).toContainText('Evento non più disponibile');
 });
 
+test('parent process relationship is named, historical and opens evidence', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const bridge = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const previous = bridge.invoke;
+    bridge.invoke = async command => command === 'get_investigation' ? {
+      process_instance: '12345678-1234-8234-9234-123456789012', events_considered: 1,
+      query_truncated: false, graph_truncated: false, references_truncated: false,
+      nodes: [{ id: 'process', kind: 'process', label: 'example.exe' }, { id: 'node-1', kind: 'parent_process', label: 'launcher.exe' }],
+      edges: [{ source: 'process', target: 'node-1', relation: 'observed_parent', event_ids: ['12345678-1234-4234-9234-123456789012'], evidence_ids: [], observation_count: 1, first_observed: 100, last_observed: 200 }],
+    } : previous(command);
+  });
+  await page.getByRole('button', { name: 'example.exe', exact: true }).click();
+  await page.getByRole('button', { name: 'Carica relazioni', exact: true }).click();
+  await expect(page.locator('.relation-map')).toContainText('Processo padre osservato');
+  await expect(page.locator('.relation-map')).toContainText('launcher.exe');
+  await expect(page.getByText('Non descrivono necessariamente lo stato attuale.', { exact: false })).toBeVisible();
+  await page.locator('.relation-map li button').click();
+  await page.getByRole('button', { name: 'Osservazione 1', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Evento non più disponibile');
+});
+
 test('process response requires confirmation and keeps uncertain outcome explicit',async({page})=>{await setup(page);await page.getByRole('button',{name:'example.exe',exact:true}).click();await page.getByRole('button',{name:'Prepara arresto di example.exe',exact:true}).click();await expect(page.getByRole('button',{name:'Arresta processo',exact:true})).toBeDisabled();expect(await page.evaluate(()=>(window as unknown as {__PIKO_PROCESS_CALLS__:string[]}).__PIKO_PROCESS_CALLS__.filter(c=>c==='confirm_process_stop').length)).toBe(0);await page.getByLabel('Confermo l’arresto forzato di questa istanza.',{exact:true}).check();await page.getByRole('button',{name:'Arresta processo',exact:true}).click();await expect(page.getByText('Esito da verificare:',{exact:false})).toBeVisible();await expect(page.getByText('Windows ha confermato la fine',{exact:false})).toHaveCount(0);});
 
 test('UDP stays a local bind and never exposes a fabricated destination',async({page})=>{await setup(page);await page.getByRole('button',{name:'example.exe',exact:true}).click();await page.getByText('Porte locali UDP',{exact:false}).click();const panel=page.locator('.udp-detail');await expect(panel).toContainText('[127.0.0.1]:5353');await expect(panel).toContainText('Destinazioni e contenuto non disponibili.');await expect(panel).not.toContainText('192.0.2.1');});

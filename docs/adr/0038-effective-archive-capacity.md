@@ -23,3 +23,28 @@ stop-on-full policy is unchanged.
 
 References: [SQLite PRAGMAs](https://www.sqlite.org/pragma.html),
 [WAL checkpoints](https://www.sqlite.org/wal.html).
+
+## STORE-02 bounded investigation
+
+The real pinned-reader regression (`tests/pinned_wal.rs`, 8-MiB fixture) accepted
+196 records before explicit admission refusal: observed aggregate peak 8,305,352
+bytes, WAL 8,202,952 bytes. A retained read transaction continued to see one record.
+After releasing it and verifying a successful TRUNCATE checkpoint, integrity/head
+were unchanged and the refused record could be appended. The test checks the
+aggregate after every commit; this is empirical coverage, not a worst-case bound.
+
+Writer audit before any reserve change:
+
+| Path | Existing constraint | Remaining capacity argument |
+|---|---|---|
+| Startup schema/index migration | SQLite page cap; aggregate sampled after initial DDL | Admission before archive-scale index creation and postconditions |
+| Startup detection backfill | 16-KiB estimate per insert | Index/WAL amplification, scan-pinned snapshot |
+| Append | 128 records/4 MiB; estimated amplification | Worst-case index/WAL/SHM and annotations, writer exclusion |
+| Compression | 32 rows/4-MiB originals, smaller replacements | WAL can grow even when logical payload shrinks; no admission |
+| Retention | 32 records/4 MiB; bounded checkpoint metadata | Deletes and checkpoint rewrites need WAL admission |
+| Offline noise copy | Admitted event batches | Direct annotation/provenance writes, combined destination/backup space |
+| Checkpoint | Soft auto-checkpoint, explicit truncate | Inspect completion and account for simultaneous DB/WAL allocation |
+
+Next capacity milestone starts with fail-before-mutation startup migration
+admission and near-budget fixtures with missing indexes/pinned readers. Keep the
+half reserve until all paths have an admission argument; no live archive changes.
