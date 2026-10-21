@@ -19,7 +19,14 @@ Real SQLite read snapshot, 8-MiB budget; 196 accepted records, aggregate peak
 reader release and verified TRUNCATE allowed the refused append, unchanged prior
 integrity/head. Changed-crate test Clippy passed. This is empirical coverage,
 not a proof of worst-case admission for other writers. ADR0038 records the audit.
-Published checkpoint 706abfa: CI run 39558256349 was in progress when inspected.
+Published checkpoint 706abfa: CI run 39558256349 Windows job passed; dependency
+job failed on newly reported Vite 7.3.6 launch-editor advisories. Vite is patched
+to 7.3.7, with the compatible minimum and lockfile updated. Local npm audit reports
+zero vulnerabilities; frontend check, all 92 unit tests, all 67 browser scenarios
+and production build passed. Remote validation of this patch remains pending.
+Advisories: [GHSA-698v-4r3x-3vcv](https://github.com/advisories/GHSA-698v-4r3x-3vcv),
+[GHSA-r825-w8mm-5pxw](https://github.com/advisories/GHSA-r825-w8mm-5pxw),
+[GHSA-587h-7wmj-h5pm](https://github.com/advisories/GHSA-587h-7wmj-h5pm).
 
 Validation evidence in this repository is limited to reproducible automated checks. Machine-specific logs, databases, screenshots, and installation records are intentionally excluded.
 
