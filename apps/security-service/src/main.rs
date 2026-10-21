@@ -8,6 +8,8 @@ fn main() -> std::process::ExitCode {
     let result = if std::env::args().skip(1).eq(["--configure-recovery"]) {
         piko_win_platform::service::configure_recovery_policy()
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    } else if std::env::args().nth(1).as_deref() == Some("--verify-evidence") {
+        runtime::verify_evidence()
     } else if std::env::args().nth(1).as_deref() == Some("--compact-evidence") {
         runtime::compact_evidence()
     } else if std::env::args().nth(1).as_deref() == Some("--remove-noise") {

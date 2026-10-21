@@ -1,5 +1,7 @@
 //! Normal-user AppContainer trial commands, isolated from runtime policy controls.
-use piko_app_control::restricted::{RestrictedController, RestrictedPlan, RestrictedSession};
+use piko_app_control::restricted::{
+    NetworkAccess, RestrictedController, RestrictedPlan, RestrictedSession,
+};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 #[derive(Default)]
@@ -8,12 +10,13 @@ pub struct RestrictedState(pub Arc<Mutex<RestrictedController>>);
 pub async fn prepare_restricted(
     state: tauri::State<'_, RestrictedState>,
     path: String,
+    network_access: Option<NetworkAccess>,
 ) -> Result<RestrictedPlan, String> {
     let c = state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         c.try_lock()
             .map_err(|_| "Prova occupata".to_string())?
-            .prepare(&path)
+            .prepare_with_network(&path, network_access.unwrap_or_default())
             .map_err(|e| e.to_string())
     })
     .await

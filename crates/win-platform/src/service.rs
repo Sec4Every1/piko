@@ -138,6 +138,35 @@ pub fn dispatch(entry: Entry) -> io::Result<()> {
     service_dispatcher::start(SERVICE_NAME, ffi_main).map_err(io::Error::other)
 }
 
+/// Offline maintenance requires an installed, stopped own-process service.
+/// Missing services return NotFound; transitional/paused states never count as stopped.
+pub fn require_installed_service_stopped() -> io::Result<()> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(io::Error::other)?;
+    let service = match manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS) {
+        Ok(service) => service,
+        Err(windows_service::Error::Winapi(error)) if error.raw_os_error() == Some(1060) => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "offline verification requires an installed piko service",
+            ));
+        }
+        Err(error) => return Err(io::Error::other(error)),
+    };
+    require_stopped_status(&service.query_status().map_err(io::Error::other)?)
+}
+
+fn require_stopped_status(status: &ServiceStatus) -> io::Result<()> {
+    if status.current_state != ServiceState::Stopped
+        || status.service_type != ServiceType::OWN_PROCESS
+    {
+        return Err(io::Error::other(
+            "offline verification requires piko service to be fully stopped",
+        ));
+    }
+    Ok(())
+}
+
 /// None means not installed. Stopped or inaccessible services are explicit errors:
 /// callers must not silently fall back to an unrelated development endpoint.
 pub fn installed_service_pid() -> io::Result<Option<u32>> {
@@ -165,5 +194,28 @@ pub fn installed_service_pid() -> io::Result<Option<u32>> {
             io::ErrorKind::NotConnected,
             "SCM returned no service PID",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_gate_accepts_only_stopped_own_process_service() {
+        assert!(require_stopped_status(&status(ServiceState::Stopped, 0)).is_ok());
+        for state in [
+            ServiceState::Running,
+            ServiceState::StartPending,
+            ServiceState::StopPending,
+            ServiceState::Paused,
+            ServiceState::PausePending,
+            ServiceState::ContinuePending,
+        ] {
+            assert!(require_stopped_status(&status(state, 0)).is_err());
+        }
+        let mut shared = status(ServiceState::Stopped, 0);
+        shared.service_type = ServiceType::SHARE_PROCESS;
+        assert!(require_stopped_status(&shared).is_err());
     }
 }

@@ -1,54 +1,52 @@
 # Piko: resume checkpoint
 
-Updated: 2026-10-20. Read AGENTS.md, git status, then WORK_QUEUE.md.
-Read only the active item's relevant sources; preserve existing work.
+Updated: 2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
+Only inspect sources relevant to the next item. Preserve existing work.
 
-## Latest delivery: APP-01 (ADR 0035)
-- Grid: outbound/inbound/both batches, selected verified-rule removal, explicit
-  preview/confirmation, 32-plan bound, direction-specific partial outcomes.
-- Helper lifetime: terminal wait, global nonqueued mutex, origin PID + creation
-  FILETIME validation before mutation. A delayed old helper rejects a closed
-  desktop; an already-started change may finish while excluding new helpers.
-- Desktop/helper must be rebuilt together; legacy plans fail closed. Hung helpers
-  keep the caller pending; automatic cancellation is not implemented.
-- Local checks passed: workspace Rust 151 tests, 4 ignored (two are child fixtures
-  invoked by parent tests); targeted app-control 26, lifecycle 4; Clippy/fmt.
-  Browser network suite 22 scenarios plus one additional plan-limit scenario pass.
-  Frontend check/build and runtime/desktop release builds pass.
-- Refresh local package with scripts/package.ps1 -Profile release if absent:
-  artifacts/piko-0.2.0-windows-x64-release (ignored, never commit).
-- Publish this reviewed checkpoint once. Full CI runs automatically; inspect the
-  matching commit under GitHub Actions before claiming remote qualification.
-  Last prior green baseline: 6b8293f / run 39429554940. Current source changes
-  have local evidence; no result from the new remote pipeline is claimed yet.
+## Current development checkpoint
+- ADR0036: explicit Recover-Piko.cmd / updater recovery switch, strict replacement
+  validation, exact original manifest/hash/ACL backup, stopped-service archive copy
+  and trusted replacement read-only verification before replacing binaries.
+  Default installer/update still refuses inconsistency. Rollback restores files
+  and prior SCM state; unknown old CLI is not executed for health qualification.
+  Known prior storage quota failure can remain with an explicit warning, never
+  labelled active; a new quota failure causes rollback.
+- ADR0037: AppContainer network None(default)/InternetClient selection wired through
+  UI/Tauri/stored plan to exact enabled token capability verification before resume.
+  Real benign native processes passed both modes + cleanup; no network I/O.
+- ADR0038: effective SQLite page limit is measured, not assumed. UI distinguishes
+  internal database saturation from aggregate budget. Reserve policy unchanged.
+- Local checks: Rust workspace 156 passed / 5 ignored; separately invoked native trial
+  qualification passed; changed-crate Clippy/fmt; PS5.1/7 recovery fixtures 20 each;
+  frontend check, 24 affected contract tests, 7 trial + 2 archive browser tests pass.
+- Runtime and native desktop release rebuilds passed. Local package is refreshed
+  with scripts/package.ps1 -Profile release; artifacts/logs are ignored.
+- Prior remotely green source: e0b6217 / run 39441703542 (both jobs passed). This
+  reviewed development checkpoint is being published once; inspect matching CI
+  before claiming remote verification. git log identifies its exact commit.
 
-## Next action / installed boundary
-- DEV-02 still blocks live qualification. Installed service remains running and
-  was NOT updated/restarted. Its service executable differs from its manifest.
-- One historical protected backup matches that manifest; no scanned backup or
-  four local build/package candidates matches the current service. A stale
-  development manifest is plausible, but current binary provenance is unproven.
-- Design verified recovery that retains originals/config/evidence before any
-  replacement. Do not overwrite the manifest to bypass validation or restore old
-  executables against newer evidence. Existing same-version updater (ADR 0034)
-  correctly refuses inconsistent installations.
-- Recovery prerequisite completed: Backup-PikoInstallation.ps1 preserves six
-  original files, hashes and ACL metadata in a private caller/SYSTEM/admin copy.
-  Real copy completed under ProgramData/piko-recovery-*/originals; manifest
-  discrepancy retained, event archive excluded, service left running. Locate the
-  recovery-copy.json locally; do not publish it. PS5.1/7 fixtures pass. No binary
-  replacement/recovery has yet been implemented or applied.
-- Recovery-backup checkpoint is committed locally. Publish after inspecting the
-  still-running Windows job for e0b6217 (run 39441703542), avoiding cancellation
-  of that cold build. Its dependency audit passed; Windows was still running at
-  the last check. Do not confuse either result with this new script's CI status.
-- Then qualify real packet blocking, undo, desktop/service restart and alternate
-  administrator credentials. APP-01 remains VERIFIED-LOCAL, not complete endpoint
-  protection. APP-02 file/system/update capabilities remain separate queued work.
+## Live installation / limitations
+- UAC was CANCELLED before the recovery helper executed. No live replacement,
+  stop/restart or recovery archive copy occurred. Do not reopen the UAC prompt
+  without renewed user direction after cancellation; continue independent code.
+- Installed service remains running with binary/manifest mismatch. Earlier private
+  six-original-file copy remains in ProgramData/piko-recovery-*/originals.
+- Trusted packaged CLI health observed 273668 events, dropped 0; storage degraded:
+  SQLite FULL, effective DB 1 GiB, active DB 1 GiB,total ~1.0005 GiB,budget 2 GiB,retention 12 months.
+  Actual event archive was not deleted or modified by this development work.
+- Live recovery/reboot/rollback, outbound AppContainer connectivity and persistent
+  installed-app file/system/update mediation remain unqualified/unsupported.
 
-## Permanent constraints
-MIT, no personal identifiers/secrets/runtime data in source. Minimal grouped UI,
-application names, details/raw on demand. Retain security events 12 months within
-2 GiB; suspend collection on capacity rather than discard unexpired evidence.
-Use existing authorization; do not repeat granted permission requests.
-Replace this checkpoint at milestones; don't append chat history.
+## Next task
+- STORE-02: measure pinned-reader WAL/checkpoint peaks and bound every writer before
+  reducing reserves. Current half reserve is deliberate; journal_size_limit and
+  auto-checkpoint are soft bounds. Never increase the user's 2 GiB budget or discard
+  unexpired evidence to make tests pass. Review ADR0038 before changes.
+- Publish the reviewed development checkpoint once, inspect its CI when useful,
+  and continue independent ready work rather than idle polling. GRAPH-01 follows
+  if storage policy requires a separate bounded design milestone.
+
+Permanent constraints: MIT; no personal paths/SIDs/secrets/runtime data in source;
+minimal grouped UI with details/raw; retain security events 12 months within 2 GiB and
+suspend on capacity. Use existing authorization; don't re-ask granted permissions.
+Replace this checkpoint at the next milestone; no append-only chat transcript.

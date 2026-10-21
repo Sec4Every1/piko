@@ -6,7 +6,8 @@ async function bridge(page: Page, uncertain = false, expired = false) {
     const calls: {command: string; args?: Record<string, unknown>}[] = [];
     const plans = new Map<string, Record<string, unknown>>();
     let sessions: Record<string, unknown>[] = [], sequence = 0;
-    (window as unknown as { __PIKO_RESTRICTED_TEST__: {calls: typeof calls} }).__PIKO_RESTRICTED_TEST__ = { calls };
+    const fixture = { calls, mismatchPrepare:false, mismatchLaunch:false };
+    (window as unknown as { __PIKO_RESTRICTED_TEST__: {calls: typeof calls} }).__PIKO_RESTRICTED_TEST__ = fixture;
     const apps = ['Alpha','Beta'].map((name, i) => ({ id: name.toLowerCase(), display_name: name, publisher:'Test fixture', version:'1.0', install_location:`C:\\Apps\\${name}`, install_date:`2026100${i + 1}`, display_icon:null, scope:'user', registry_view:'64', source:'windows_uninstall_registry', uninstall_key:name }));
     const policy = {network_capabilities:0,max_processes:1,memory_limit_bytes:536870912,original_unchanged:true,staged_read_only:true,stop_on_ui_exit:true};
     Object.defineProperty(window, 'isTauri', {value:true});
@@ -20,9 +21,9 @@ async function bridge(page: Page, uncertain = false, expired = false) {
       if (command === 'sandbox_status') return {launcher_available:false,max_sessions:8};
       if (command === 'sandbox_sessions') return [];
       if (command === 'restricted_sessions') return sessions;
-      if (command === 'prepare_restricted') {const id=`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`;const value={id,executable:args?.path,sha256:'a'.repeat(64),expires_at:Math.floor(Date.now()/1000)+(expired?-1:300),policy};plans.set(id,value);return value;}
+      if (command === 'prepare_restricted') {const id=`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`;const value={id,executable:args?.path,sha256:'a'.repeat(64),expires_at:Math.floor(Date.now()/1000)+(expired?-1:300),policy:{...policy,network_access:fixture.mismatchPrepare ? (args?.networkAccess === 'internet_client' ? 'none' : 'internet_client') : (args?.networkAccess ?? 'none'),network_capabilities:fixture.mismatchPrepare ? (args?.networkAccess === 'internet_client' ? 0 : 1) : (args?.networkAccess === 'internet_client' ? 1 : 0)}};plans.set(id,value);return value;}
       if (command === 'discard_restricted') {plans.delete(String(args?.planId));return null;}
-      if (command === 'launch_restricted') {const p=plans.get(String(args?.planId));if(!p)throw Error('Fixture single-use plan absent');plans.delete(String(args?.planId));const value={...p,pid:123,created_at:Math.floor(Date.now()/1000),running:true,data_directory:'C:\\TestFixtureProfile'};sessions.push(value);if(uncertain)throw Error('Fixture transport disconnected after request');return value;}
+      if (command === 'launch_restricted') {const p=plans.get(String(args?.planId));if(!p)throw Error('Fixture single-use plan absent');plans.delete(String(args?.planId));const value={...p,pid:123,created_at:Math.floor(Date.now()/1000),running:true,data_directory:'C:\\TestFixtureProfile'};sessions.push(value);if(uncertain)throw Error('Fixture transport disconnected after request');return fixture.mismatchLaunch ? {...value,policy:{...policy,network_access:'none',network_capabilities:0}} : value;}
       if (command === 'stop_restricted') {sessions=sessions.filter(s=>s.id!==args?.sessionId);return null;}
       throw Error(`Unexpected fixture command ${command}`);
     }}});
@@ -48,6 +49,68 @@ test('restricted copy requires explicit consent, exposes scope and stops only se
   await expect(panel.getByRole('status')).toHaveText('Prova terminata; copia e profilo rimossi.');
   expect(await calls(page,'launch_restricted')).toHaveLength(1);
   expect(await calls(page,'stop_restricted')).toHaveLength(1);
+  await expect(panel.locator('article')).toHaveCount(0);
+});
+
+test('network permission is denied by default and edits invalidate the preview and consent',async({page})=>{
+  await bridge(page);await open(page);
+  const panel=page.locator('.restricted-panel');
+  await panel.getByLabel('Eseguibile da provare',{exact:true}).fill('C:\\Fixture\\sample.exe');
+  const network=panel.getByLabel('Accesso rete della copia',{exact:true});
+  await expect(network).toHaveValue('none');
+  await network.selectOption('internet_client');
+  await panel.getByRole('button',{name:'Prepara avvio limitato',exact:true}).click();
+  await expect(panel.getByRole('region',{name:'Anteprima avvio limitato'})).toContainText('potrà tentare connessioni di rete');
+  await panel.getByRole('checkbox').check();
+  await network.selectOption('none');
+  await expect(panel.getByRole('region',{name:'Anteprima avvio limitato'})).toHaveCount(0);
+  expect(await calls(page,'discard_restricted')).toHaveLength(1);
+  await panel.getByRole('button',{name:'Prepara avvio limitato',exact:true}).click();
+  await expect(panel.getByRole('region',{name:'Anteprima avvio limitato'})).toContainText('Nessuna capability di rete concessa');
+  await expect(panel.getByRole('button',{name:'Avvia copia limitata',exact:true})).toBeDisabled();
+  expect(await calls(page,'launch_restricted')).toHaveLength(0);
+});
+
+test('internet permission is frozen per trial and existing cleanup remains available',async({page})=>{
+  await bridge(page);await open(page);
+  const panel=page.locator('.restricted-panel');
+  await panel.getByLabel('Eseguibile da provare',{exact:true}).fill('C:\\Fixture\\sample.exe');
+  await panel.getByLabel('Accesso rete della copia',{exact:true}).selectOption('internet_client');
+  await panel.getByRole('button',{name:'Prepara avvio limitato',exact:true}).click();
+  await panel.getByRole('checkbox').check();
+  await panel.getByRole('button',{name:'Avvia copia limitata',exact:true}).click();
+  await expect(panel.locator('article')).toContainText('Rete: internetClient');
+  await panel.getByLabel('Accesso rete della copia',{exact:true}).selectOption('none');
+  await expect(panel.locator('article')).toContainText('Rete: internetClient');
+  expect((await calls(page,'prepare_restricted'))[0].args?.networkAccess).toBe('internet_client');
+  await panel.getByRole('button',{name:'Termina e rimuovi prova',exact:true}).click();
+  await expect(panel.locator('article')).toHaveCount(0);
+});
+
+test('unexpected network policy in a preview is rejected without execution',async({page})=>{
+  await bridge(page);await open(page);
+  await page.evaluate(()=>{ (window as unknown as {__PIKO_RESTRICTED_TEST__:{mismatchPrepare:boolean}}).__PIKO_RESTRICTED_TEST__.mismatchPrepare=true; });
+  const panel=page.locator('.restricted-panel');
+  await panel.getByLabel('Eseguibile da provare',{exact:true}).fill('C:\\Fixture\\sample.exe');
+  await panel.getByRole('button',{name:'Prepara avvio limitato',exact:true}).click();
+  await expect(panel.getByRole('alert')).toContainText('Invalid restricted trial response');
+  await expect(panel.getByRole('region',{name:'Anteprima avvio limitato'})).toHaveCount(0);
+  expect(await calls(page,'launch_restricted')).toHaveLength(0);
+  expect(await calls(page,'discard_restricted')).toHaveLength(1);
+});
+
+test('unexpected launch policy stays uncertain and offers cleanup of the owned trial',async({page})=>{
+  await bridge(page);await open(page);
+  const panel=page.locator('.restricted-panel');
+  await panel.getByLabel('Eseguibile da provare',{exact:true}).fill('C:\\Fixture\\sample.exe');
+  await panel.getByLabel('Accesso rete della copia',{exact:true}).selectOption('internet_client');
+  await panel.getByRole('button',{name:'Prepara avvio limitato',exact:true}).click();
+  await page.evaluate(()=>{ (window as unknown as {__PIKO_RESTRICTED_TEST__:{mismatchLaunch:boolean}}).__PIKO_RESTRICTED_TEST__.mismatchLaunch=true; });
+  await panel.getByRole('checkbox').check();
+  await panel.getByRole('button',{name:'Avvia copia limitata',exact:true}).click();
+  await expect(panel.getByRole('alert')).toContainText('Esito dell’avvio non confermato');
+  await expect(panel.getByRole('status')).toHaveCount(0);
+  await panel.getByRole('button',{name:'Termina e rimuovi prova',exact:true}).click();
   await expect(panel.locator('article')).toHaveCount(0);
 });
 

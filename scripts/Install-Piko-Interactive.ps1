@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$Elevated, [string]$ViewerSid)
+param([switch]$Elevated, [string]$ViewerSid, [switch]$RecoverInconsistentInstallation)
 $ErrorActionPreference = 'Stop'
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -10,6 +10,7 @@ if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     try {
         $scriptPath = (Resolve-Path -LiteralPath $PSCommandPath).Path
         $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $scriptPath + '" -Elevated -ViewerSid "' + $ViewerSid + '"'
+        if ($RecoverInconsistentInstallation) { $arguments += ' -RecoverInconsistentInstallation' }
         $child = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -Verb RunAs -Wait -PassThru
         if ($child.ExitCode -ne 0) { throw "Installer exited with code $($child.ExitCode)." }
         $desktop = Join-Path $env:ProgramFiles 'piko\piko-desktop.exe'
@@ -32,8 +33,10 @@ if ($existingService) {
     if (!(Test-Path -LiteralPath $updater)) { throw 'Update-Piko.ps1 is missing from this package.' }
     # An existing installation keeps its enrolled viewer, policy and evidence.
     # The updater independently validates the installation and may refuse it.
-    & $updater -PackagePath $PSScriptRoot
+    if ($RecoverInconsistentInstallation) { & $updater -PackagePath $PSScriptRoot -RecoverInconsistentInstallation }
+    else { & $updater -PackagePath $PSScriptRoot }
 } else {
+    if ($RecoverInconsistentInstallation) { throw 'Nessuna installazione piko da recuperare. Usa Install-Piko.cmd per una nuova installazione.' }
     $installer = Join-Path $PSScriptRoot 'Install-Piko.ps1'
     if (!(Test-Path -LiteralPath $installer)) { throw 'Install-Piko.ps1 is missing from this package.' }
     & $installer -ViewerSid $ViewerSid -EnableEtw

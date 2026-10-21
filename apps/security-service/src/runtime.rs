@@ -45,6 +45,40 @@ fn quota_exhausted(error: Option<&str>) -> bool {
     )
 }
 
+pub fn verify_evidence() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.len() != 3 || args[1] != "--config" || !piko_win_platform::current_process_elevated()? {
+        return Err(
+            "offline evidence verification requires administrator and --config <path>".into(),
+        );
+    }
+    piko_win_platform::service::require_installed_service_stopped()?;
+    let config = Config::from_reader(std::fs::File::open(&args[2])?)?;
+    let report = verify_evidence_archive(&config)?;
+    println!(
+        "{}",
+        serde_json::json!({"result":"PASS","verified_events":report.verified_events,"head_hash":report.head_hash,"expired_events":report.expired_events,"externally_anchored":report.externally_anchored,"read_only":true})
+    );
+    Ok(())
+}
+
+fn verify_evidence_archive(
+    config: &Config,
+) -> Result<piko_event_storage::IntegrityReport, Box<dyn Error>> {
+    config.validate()?;
+    // Reader mode refuses a missing archive and performs no schema migration.
+    // SQLite can still create/update transient WAL shared-memory metadata.
+    let store = piko_event_storage::SqliteEventStore::reader(
+        config.data_dir.join("events.db"),
+        StorageConfig {
+            max_disk_bytes: config.max_disk_mib * 1024 * 1024,
+            retention_months: config.retention_months,
+            ..Default::default()
+        },
+    )?;
+    Ok(store.verify_integrity()?)
+}
+
 pub fn compact_evidence() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() != 3 || args[1] != "--config" || !piko_win_platform::current_process_elevated()? {
@@ -874,6 +908,71 @@ fn log(level: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_verification_preserves_archive_and_rejects_corruption_or_missing_data(
+    ) -> Result<(), Box<dyn Error>> {
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let fixture =
+            Fixture(std::env::temp_dir().join(format!("piko-offline-verify-{}", Uuid::new_v4())));
+        std::fs::create_dir(&fixture.0)?;
+        let config = Config {
+            data_dir: fixture.0.clone(),
+            retention_months: Some(12),
+            ..Config::default()
+        };
+        let database = config.data_dir.join("events.db");
+        assert!(verify_evidence_archive(&config).is_err());
+        assert!(
+            !database.exists(),
+            "verification must not create an archive"
+        );
+        let expected = {
+            let mut store = piko_event_storage::SqliteEventStore::open(
+                &database,
+                StorageConfig {
+                    retention_months: config.retention_months,
+                    ..Default::default()
+                },
+            )?;
+            let mut event = SecurityEvent::heartbeat(store.host_id(), Uuid::new_v4(), 1, 100, 1);
+            event.result = "offline-original-fixture".into();
+            store.append_batch(&[event])?;
+            store.verify_integrity()?
+        };
+        let original = std::fs::read(&database)?;
+        let report = verify_evidence_archive(&config)?;
+        assert_eq!(report, expected);
+        assert_eq!(report.verified_events, 1);
+        assert_eq!(std::fs::read(&database)?, original);
+
+        // Change an event payload in place: retain valid SQLite structure while
+        // proving that verification checks the stored chain, not just opening it.
+        let mut corrupt = original;
+        let marker = b"offline-original-fixture";
+        let position = corrupt
+            .windows(marker.len())
+            .position(|bytes| bytes == marker)
+            .ok_or("fixture event payload not found")?;
+        corrupt[position] = b'X';
+        std::fs::write(&database, &corrupt)?;
+        assert!(verify_evidence_archive(&config).is_err());
+        assert_eq!(std::fs::read(&database)?, corrupt);
+
+        let invalid = Config {
+            max_disk_mib: 0,
+            ..config
+        };
+        assert!(verify_evidence_archive(&invalid).is_err());
+        assert_eq!(std::fs::read(&database)?, corrupt);
+        Ok(())
+    }
+
     #[test]
     fn quota_mode_never_masks_corruption_or_other_storage_failures() {
         assert!(quota_exhausted(Some(

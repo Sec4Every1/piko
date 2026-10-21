@@ -602,6 +602,14 @@ Piko ricontrolla il processo tramite handle: tempo di creazione in precisione Wi
 
 ## Avvio limitato con AppContainer
 
+In **Permessi app**, apri **Avvio limitato · AppContainer**, scegli l'eseguibile e
+**Accesso rete della copia**. Il valore predefinito è **Negato — consigliato**.
+Solo se necessario scegli **Consenti connessioni in uscita (internetClient)**:
+la copia potrà tentare connessioni soggette al Firewall e alle policy Windows.
+Controlla il permesso nell'anteprima e conferma prima di avviarla. Modificare
+percorso o permesso annulla l'anteprima e la conferma. Ogni prova mostra il proprio
+permesso; cambiarlo nel selettore non modifica prove già avviate. **Termina e
+rimuovi prova** chiude la copia e rimuove il profilo temporaneo.
 
 È isolamento sullo stesso Windows, non una VM: il profilo temporaneo resta scrivibile e alcune risorse condivise Windows/Program Files restano leggibili. Non applica un divieto universale fuori dalla cartella di installazione e non congela gli aggiornamenti dell’app originale. Per software ostile preferisci Windows Sandbox funzionante o una VM dedicata.
 

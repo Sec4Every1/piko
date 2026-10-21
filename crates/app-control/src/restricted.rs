@@ -1,6 +1,7 @@
 //! Confirmed, single-use AppContainer launches of one verified staged executable.
 //! Original app permissions/installations are never modified.
 use crate::{inspect_executable, invalid, now, Executable, PLAN_SECONDS};
+pub use piko_win_platform::restricted::NetworkAccess;
 use piko_win_platform::restricted::{Profile, TrialProcess, MEMORY_LIMIT_BYTES, PROCESS_LIMIT};
 use serde::Serialize;
 use std::{
@@ -15,6 +16,7 @@ const MAX_TRIALS: usize = 2;
 const MAX_STAGING: usize = 4;
 #[derive(Clone, Serialize)]
 pub struct RestrictedPolicy {
+    pub network_access: NetworkAccess,
     pub network_capabilities: u32,
     pub max_processes: u32,
     pub memory_limit_bytes: usize,
@@ -25,6 +27,7 @@ pub struct RestrictedPolicy {
 impl Default for RestrictedPolicy {
     fn default() -> Self {
         Self {
+            network_access: NetworkAccess::None,
             network_capabilities: 0,
             max_processes: PROCESS_LIMIT,
             memory_limit_bytes: MEMORY_LIMIT_BYTES,
@@ -96,6 +99,13 @@ pub struct RestrictedController {
 }
 impl RestrictedController {
     pub fn prepare(&mut self, path: &str) -> io::Result<RestrictedPlan> {
+        self.prepare_with_network(path, NetworkAccess::None)
+    }
+    pub fn prepare_with_network(
+        &mut self,
+        path: &str,
+        network: NetworkAccess,
+    ) -> io::Result<RestrictedPlan> {
         let time = now()?;
         self.plans.retain(|_, p| p.expires_at > time);
         if self.plans.len() >= 8 {
@@ -107,7 +117,11 @@ impl RestrictedController {
             executable: exe.path,
             sha256: exe.sha256,
             expires_at: time + PLAN_SECONDS,
-            policy: RestrictedPolicy::default(),
+            policy: RestrictedPolicy {
+                network_access: network,
+                network_capabilities: network.capability_count(),
+                ..RestrictedPolicy::default()
+            },
         };
         self.plans.insert(plan.id, plan.clone());
         Ok(plan)
@@ -193,7 +207,12 @@ impl RestrictedController {
             profile.protect_staging(&acl_file)?;
             drop(acl_file);
             // Keep verified source and copy handles plus all parents locked through launch.
-            let process = piko_win_platform::restricted::launch(&profile, &payload, &directory)?;
+            let process = piko_win_platform::restricted::launch_with_network(
+                &profile,
+                &payload,
+                &directory,
+                plan.policy.network_access,
+            )?;
             let view = RestrictedSession {
                 id,
                 executable: plan.executable,
@@ -256,14 +275,49 @@ mod tests {
         let mut c = RestrictedController::default();
         let p = c.prepare(exe.to_str().ok_or_else(|| invalid("test"))?)?;
         assert_eq!(p.policy.network_capabilities, 0);
+        assert_eq!(p.policy.network_access, NetworkAccess::None);
+        let online = c.prepare_with_network(
+            exe.to_str().ok_or_else(|| invalid("test"))?,
+            NetworkAccess::InternetClient,
+        )?;
+        assert_eq!(online.policy.network_access, NetworkAccess::InternetClient);
+        assert_eq!(online.policy.network_capabilities, 1);
+        assert_eq!(c.plans[&p.id].policy.network_access, NetworkAccess::None);
+        assert_eq!(
+            c.plans[&online.id].policy.network_access,
+            NetworkAccess::InternetClient
+        );
         assert!(c.sessions()?.is_empty());
         data[2] = 42;
         fs::write(&exe, data)?;
         assert!(c.launch(&root.join("trials"), p.id).is_err());
+        assert!(c.launch(&root.join("trials"), online.id).is_err());
         assert!(!root.join("trials").exists());
         assert!(c.launch(&root.join("trials"), p.id).is_err());
         fs::remove_file(exe)?;
         fs::remove_dir(root)?;
+        Ok(())
+    }
+    #[test]
+    fn network_contract_has_closed_names_and_offline_default() -> io::Result<()> {
+        assert_eq!(NetworkAccess::default(), NetworkAccess::None);
+        assert_eq!(
+            serde_json::to_string(&NetworkAccess::InternetClient)?,
+            "\"internet_client\""
+        );
+        assert_eq!(
+            serde_json::from_str::<NetworkAccess>("\"none\"")?,
+            NetworkAccess::None
+        );
+        for value in [
+            "\"all\"",
+            "\"private_network\"",
+            "\"InternetClient\"",
+            "1",
+            "null",
+        ] {
+            assert!(serde_json::from_str::<NetworkAccess>(value).is_err());
+        }
         Ok(())
     }
     #[test]
@@ -284,6 +338,88 @@ mod tests {
         assert!(c.launch(Path::new(r"C:\unowned"), id).is_err());
         c.discard(Uuid::new_v4());
         assert!(c.stop(id).is_err());
+        Ok(())
+    }
+
+    /// Real token/cleanup qualification only: the fixture performs no network I/O
+    /// and accesses only its own AppContainer report file.
+    #[test]
+    #[ignore = "explicit native None/InternetClient token and cleanup qualification"]
+    fn native_network_contract_tokens_and_cleanup_without_network_io() -> io::Result<()> {
+        use std::{
+            process::Command,
+            time::{Duration, Instant},
+        };
+
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                // This unique directory contains only the test source and build output.
+                if let Err(error) = fs::remove_dir_all(&self.0) {
+                    if error.kind() != io::ErrorKind::NotFound {
+                        eprintln!("native token fixture cleanup failed: {error}");
+                    }
+                }
+            }
+        }
+        let fixture = Fixture(
+            std::env::temp_dir().join(format!("piko-native-token-contract-{}", Uuid::new_v4())),
+        );
+        fs::create_dir(&fixture.0)?;
+        let source = fixture.0.join("ready.rs");
+        let executable = fixture.0.join("ready.exe");
+        fs::write(
+            &source,
+            r#"
+fn main() {
+    let directory = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap());
+    std::fs::write(directory.join("ready.txt"), "resumed-after-native-token-check").unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(30));
+}
+"#,
+        )?;
+        let output = Command::new("rustc")
+            .args(["--edition=2021", "-C", "opt-level=1"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()?;
+        if !output.status.success() {
+            return Err(io::Error::other(
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+            ));
+        }
+        let path = executable.to_str().ok_or_else(|| invalid("test path"))?;
+        let original_hash = inspect_executable(path)?.sha256;
+        let staging = fixture.0.join("trials");
+        // Declared after Fixture: owned sessions are terminated/cleaned first on failure.
+        let mut controller = RestrictedController::default();
+        for network in [NetworkAccess::None, NetworkAccess::InternetClient] {
+            let plan = controller.prepare_with_network(path, network)?;
+            assert_eq!(plan.policy.network_access, network);
+            let session = controller.launch(&staging, plan.id)?;
+            assert_eq!(session.policy.network_access, network);
+            assert_eq!(
+                session.policy.network_capabilities,
+                network.capability_count()
+            );
+            let report = Path::new(&session.data_directory).join("ready.txt");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !report.is_file() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            // Even a failed report read must stop the owned trial before returning.
+            let ready = fs::read_to_string(&report);
+            controller.stop(session.id)?;
+            assert_eq!(ready?, "resumed-after-native-token-check");
+            assert!(controller.sessions()?.is_empty());
+            assert!(!Path::new(&session.data_directory).exists());
+            assert!(!staging.join(session.id.to_string()).exists());
+            assert_eq!(inspect_executable(path)?.sha256, original_hash);
+            eprintln!("PASS {network:?}: real capability token, readiness, stop/profile/staging cleanup; no network I/O");
+        }
+        drop(controller);
+        fs::remove_dir_all(&fixture.0)?;
         Ok(())
     }
 

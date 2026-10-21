@@ -24,3 +24,16 @@ protected staging/backup and attempted rollback (ADR0034), routed from the
 interactive installer. Mocked tests passed on PowerShell5.1/7. Live refresh is
 not qualified and refuses the currently inconsistent installed manifest. Secure
 signed updates, cross-version migration and automatic crash recovery remain open.
+
+2026-10-21: explicit inconsistent-installation recovery adds protected original and
+archive copies, strict replacement validation, offline read-only integrity gate and
+exact binary/manifest rollback (ADR0036). Known pre-existing storage capacity failure
+is reported explicitly rather than mislabelled active. Live UAC was cancelled;
+the installed runtime was not changed.
+
+AppContainer trials now offer default-denied or explicit InternetClient network
+capability, bound to the preview and verified token (ADR0037). Actual benign token
+creation and stop/profile cleanup passed in both modes; packet connectivity and
+broader installed-app file/system/update controls remain unqualified/unsupported.
+Effective SQLite capacity is measured directly (ADR0038); budget/retention and
+write-reserve policy are unchanged.

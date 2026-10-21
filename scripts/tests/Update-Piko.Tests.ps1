@@ -33,6 +33,7 @@ function New-Object {
     Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName -ArgumentList $ArgumentList
 }
 function Get-Acl { param([string]$LiteralPath) return $testAcl }
+function Get-PSDrive { param([string]$Name) return [pscustomobject]@{Free=$pikoUpgradeTestState.FreeBytes} }
 function Set-Acl {
     param([string]$LiteralPath, $AclObject)
     $pikoUpgradeTestState.AclWrites++
@@ -76,6 +77,28 @@ function Copy-Item {
         [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'next') {
         [IO.File]::AppendAllText($Destination, 'changed during package copy')
     }
+    if ($pikoUpgradeTestState.TamperOriginal -and [IO.Path]::GetFileName($Destination) -eq 'piko-service.exe' -and
+        [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'previous') {
+        [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), 'changed after original capture')
+    }
+    if ([IO.Path]::GetFileName($Destination) -eq 'piko-service.exe' -and [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'next') {
+        Set-Item -LiteralPath ('Function:global:' + $Destination) -Value {
+            param($command,$configFlag,$configPath)
+            if ($command -cne '--verify-evidence' -or $configFlag -cne '--config') { throw 'Unexpected offline operation.' }
+            $pikoUpgradeTestState.VerifyCalls++
+            if ($pikoUpgradeTestState.FailVerify) { throw 'Injected archive incompatibility' }
+            @{result='PASS';read_only=$true;verified_events=1;head_hash='fixture'} | ConvertTo-Json
+        }
+    }
+    if ([IO.Path]::GetFileName($Destination) -eq 'piko.exe' -and [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'next') {
+        Set-Item -LiteralPath ('Function:global:' + $Destination) -Value {
+            param($action)
+            if ($action -cne 'health') { throw 'Unexpected baseline command.' }
+            $sensor=@{id='piko.storage';state='active';detail=$null}
+            if ($pikoUpgradeTestState.CapacityBefore) { $sensor.state='degraded';$sensor.detail='SQLite error: database or disk is full' }
+            @{runtime_mode='windows_service';version='0.2.0';dropped_events=0;sensors=@($sensor)} | ConvertTo-Json -Depth 5
+        }
+    }
 }
 function Write-FixtureManifest([string]$Directory) {
     $entries = @($files | ForEach-Object { @{name=$_; sha256=(Get-FileHash -LiteralPath (Join-Path $Directory $_) -Algorithm SHA256).Hash} })
@@ -91,6 +114,7 @@ function Reset-Fixture {
     Write-FixtureManifest $package
     @{data_dir=$data; viewer_sid='fixture-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $program 'service.json')
     [IO.File]::WriteAllText((Join-Path $data 'evidence.txt'), 'retained evidence fixture')
+    [IO.File]::WriteAllText((Join-Path $data 'events.db'), 'fixture archive')
     $pikoUpgradeTestState.Status='Running'
     $pikoUpgradeTestState.Mutations=0
     $pikoUpgradeTestState.AclWrites=0
@@ -98,7 +122,13 @@ function Reset-Fixture {
     $pikoUpgradeTestState.ActiveClient=$false
     $pikoUpgradeTestState.FailStart=$false
     $pikoUpgradeTestState.TamperStage=$false
+    $pikoUpgradeTestState.TamperOriginal=$false
     $pikoUpgradeTestState.FailHealth=$false
+    $pikoUpgradeTestState.FailVerify=$false
+    $pikoUpgradeTestState.VerifyCalls=0
+    $pikoUpgradeTestState.FreeBytes=10GB
+    $pikoUpgradeTestState.CapacityBefore=$false
+    $pikoUpgradeTestState.CapacityAfter=$false
     $pikoUpgradeTestState.ServiceExists=$true
 }
 function Assert-PreservedData {
@@ -125,7 +155,9 @@ try {
         $global:LASTEXITCODE=0
         $version='0.2.0'
         if ($pikoUpgradeTestState.FailHealth) { $version='0.1.0'; $pikoUpgradeTestState.FailHealth=$false }
-        @{runtime_mode='windows_service'; version=$version; dropped_events=0; sensors=@(@{id='piko.storage';state='active'})} | ConvertTo-Json -Depth 5
+        $sensor=@{id='piko.storage';state='active';detail=$null}
+        if ($pikoUpgradeTestState.CapacityAfter) { $sensor.state='degraded';$sensor.detail='SQLite error: database or disk is full' }
+        @{runtime_mode='windows_service'; version=$version; dropped_events=0; sensors=@($sensor)} | ConvertTo-Json -Depth 5
     }
     Reset-Fixture
     $configHash=(Get-FileHash -LiteralPath (Join-Path $program 'service.json') -Algorithm SHA256).Hash
@@ -139,7 +171,7 @@ try {
     Write-Output 'PASS preflight and WhatIf make no lifecycle/ACL/file changes'
 
     [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), 'manifest mismatch')
-    Assert-Refused 'installed manifest mismatch is never repaired' '*Manifest hash mismatch*'
+    Assert-Refused 'normal refresh refuses installed manifest mismatch' '*Manifest hash mismatch*'
     if ($pikoUpgradeTestState.Mutations -ne 0 -or $pikoUpgradeTestState.AclWrites -ne 0) { throw 'Mismatch refusal changed service/ACLs.' }
     Reset-Fixture
     $pikoUpgradeTestState.ActiveClient=$true
@@ -182,17 +214,107 @@ try {
     foreach ($name in $files) {
         if ([IO.File]::ReadAllText((Join-Path $program $name)) -cne ('old fixture: ' + $name)) { throw 'IPC failure rollback did not restore all binaries.' }
     }
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $originalServiceHash=(Get-FileHash (Join-Path $program 'piko-service.exe')).Hash
+    $originalManifest=[IO.File]::ReadAllText((Join-Path $program 'manifest.json'))
+    $before=@(Get-ChildItem -LiteralPath $program -Force).Count
+    $preflight=& $scriptPath -PackagePath $package -RecoverInconsistentInstallation -PreflightOnly | ConvertFrom-Json
+    $null=& $scriptPath -PackagePath $package -RecoverInconsistentInstallation -WhatIf
+    if ($preflight.original_manifest_consistent -ne $false -or !$preflight.recovery_requested -or $pikoUpgradeTestState.Mutations -ne 0 -or
+        $pikoUpgradeTestState.AclWrites -ne 0 -or @(Get-ChildItem -LiteralPath $program -Force).Count -ne $before) { throw 'Recovery preflight/WhatIf changed installation or hid mismatch.' }
+    $result=& $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false | ConvertFrom-Json
+    if (!$result.recovery_requested -or $result.original_manifest_consistent -ne $false -or
+        (Get-FileHash (Join-Path $result.backup_directory 'piko-service.exe')).Hash -cne $originalServiceHash -or
+        [IO.File]::ReadAllText((Join-Path $result.backup_directory 'manifest.json')) -cne $originalManifest) { throw 'Recovery did not preserve inconsistent originals.' }
+    $recovery=Get-Content (Join-Path (Split-Path -Parent $result.backup_directory) 'recovery.json') -Raw | ConvertFrom-Json
+    if ($recovery.original_manifest_consistent -ne $false -or $recovery.original_source_trust_verified -ne $false -or
+        $recovery.original_observed_files.Count -ne 4 -or !$recovery.original_file_acls.'piko-service.exe') { throw 'Recovery audit incomplete.' }
+    Assert-PreservedData
+    if ($pikoUpgradeTestState.VerifyCalls -ne 1 -or [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $result.backup_directory) 'evidence-before/events.db')) -cne 'fixture archive') { throw 'Recovery archive backup/compatibility check missing.' }
+    Write-Output 'PASS explicit recovery preserves inconsistent original bytes and metadata; preflight/WhatIf remain read-only'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $package 'piko-service.exe'), ' invalid replacement')
+    $message=$null
+    try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*Manifest hash mismatch*' -or $pikoUpgradeTestState.Mutations -ne 0 -or $pikoUpgradeTestState.AclWrites -ne 0) { throw 'Recovery weakened replacement validation.' }
+    Write-Output 'PASS recovery still refuses a corrupted replacement before mutation'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $pikoUpgradeTestState.TamperOriginal=$true
+    $message=$null
+    try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*Manifest hash mismatch*' -or $pikoUpgradeTestState.Mutations -ne 0) { throw 'Recovery accepted a later original change or stopped the service.' }
+    Write-Output 'PASS recovery detects changed originals before stopping service'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $pikoUpgradeTestState.FailVerify=$true
+    $message=$null
+    try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*Injected archive incompatibility*' -or $pikoUpgradeTestState.Status -cne 'Running' -or
+        [IO.File]::ReadAllText((Join-Path $program 'piko-service.exe')) -cne 'old fixture: piko-service.exe inconsistent original' -or $pikoUpgradeTestState.HealthCalls -ne 0) { throw 'Incompatible archive did not prevent replacement.' }
+    Assert-PreservedData
+    Write-Output 'PASS incompatible archive prevents replacement and restores prior service state'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $pikoUpgradeTestState.Status='Stopped'
+    $result=& $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false | ConvertFrom-Json
+    if ($pikoUpgradeTestState.Status -cne 'Stopped' -or $pikoUpgradeTestState.VerifyCalls -ne 1) { throw 'Recovery failed initially stopped state.' }
+    Assert-PreservedData
+    Write-Output 'PASS explicit recovery restores initially stopped service state'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $pikoUpgradeTestState.CapacityBefore=$true
+    $pikoUpgradeTestState.CapacityAfter=$true
+    $result=& $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false | ConvertFrom-Json
+    if ($result.storage_state -cne 'capacity_exhausted' -or $result.warnings.Count -ne 1 -or $pikoUpgradeTestState.Status -cne 'Running') { throw 'Existing quota problem was concealed or prevented binary recovery.' }
+    Assert-PreservedData
+    Write-Output 'PASS known prior quota problem permits binary recovery with explicit degraded-storage warning'
+
+    Reset-Fixture
+    [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+    $pikoUpgradeTestState.CapacityAfter=$true
+    $message=$null
+    try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
+    if ($message -notlike '*New storage capacity failure*' -or $message -notlike '*previous_exact_bytes_and_service_state_restored_health_unqualified*') { throw 'New quota failure was incorrectly accepted.' }
+    Assert-PreservedData
+    Write-Output 'PASS new quota problem fails recovery and restores original files/state'
+
+    foreach ($failure in @('FailStart','FailHealth')) {
+        Reset-Fixture
+        [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), ' inconsistent original')
+        $originalServiceHash=(Get-FileHash (Join-Path $program 'piko-service.exe')).Hash
+        $originalManifest=[IO.File]::ReadAllText((Join-Path $program 'manifest.json'))
+        $pikoUpgradeTestState[$failure]=$true
+        $message=$null
+        try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
+        if ($message -notlike '*previous_exact_bytes_and_service_state_restored_health_unqualified*' -or
+            (Get-FileHash (Join-Path $program 'piko-service.exe')).Hash -cne $originalServiceHash -or
+            [IO.File]::ReadAllText((Join-Path $program 'manifest.json')) -cne $originalManifest -or $pikoUpgradeTestState.Status -cne 'Running' -or
+            $pikoUpgradeTestState.HealthCalls -ne [int]($failure -eq 'FailHealth')) { throw 'Inconsistent rollback was not exact or executed old CLI.' }
+        Assert-PreservedData
+        Write-Output "PASS recovery rollback restores original mismatch without executing unknown CLI after $failure"
+    }
     # Test the elevated interactive dispatch without UAC or real installation.
     $pikoUpgradeTestState.Route=''
     Set-Item -LiteralPath ('Function:' + $scriptPath) -Value {
-        param([string]$PackagePath)
+        param([string]$PackagePath,[switch]$RecoverInconsistentInstallation)
         if ($args.Count -ne 0) { throw 'Update dispatch unexpectedly changed install options.' }
-        $pikoUpgradeTestState.Route='update'
+        $pikoUpgradeTestState.Route=if($RecoverInconsistentInstallation){'recover'}else{'update'}
     }
     $interactive = Join-Path (Split-Path -Parent $PSScriptRoot) 'Install-Piko-Interactive.ps1'
     & $interactive -Elevated -ViewerSid 'S-1-5-18'
     if ($pikoUpgradeTestState.Route -cne 'update') { throw 'Existing installation did not dispatch to updater.' }
     Write-Output 'PASS interactive existing-service route preserves installer options'
+    & $interactive -Elevated -ViewerSid 'S-1-5-18' -RecoverInconsistentInstallation
+    if ($pikoUpgradeTestState.Route -cne 'recover') { throw 'Explicit recovery dispatch missing.' }
+    Write-Output 'PASS recovery dispatch requires explicit switch'
     $pikoUpgradeTestState.ServiceExists=$false
     $installer = Join-Path (Split-Path -Parent $PSScriptRoot) 'Install-Piko.ps1'
     Set-Item -LiteralPath ('Function:' + $installer) -Value {
@@ -203,7 +325,7 @@ try {
     & $interactive -Elevated -ViewerSid 'S-1-5-18'
     if ($pikoUpgradeTestState.Route -cne 'install') { throw 'Fresh installation did not retain its route.' }
     Write-Output 'PASS interactive fresh-install route retains viewer and ETW options'
-    Write-Output "All ten upgrade fixture checks passed on PowerShell $($PSVersionTable.PSVersion); no real installation or SCM state was changed."
+    Write-Output "Upgrade and explicit recovery fixture checks passed on PowerShell $($PSVersionTable.PSVersion); no real installation or SCM state was changed."
 } finally {
     $env:ProgramFiles=$savedProgramFiles
     $env:ProgramData=$savedProgramData

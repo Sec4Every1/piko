@@ -1,5 +1,6 @@
 //! Explicit AppContainer trials of staged copies; no host-wide permission policy.
 //! All handles and profile names are owned. Failure never falls back to normal execution.
+use serde::{Deserialize, Serialize};
 use std::{fs::File, io, mem, os::windows::io::AsRawHandle, path::Path, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, LocalFree, ERROR_SUCCESS, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
@@ -8,12 +9,14 @@ use windows_sys::Win32::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
             SetSecurityInfo, SDDL_REVISION_1, SE_FILE_OBJECT,
         },
-        EqualSid, FreeSid, GetSecurityDescriptorDacl, GetTokenInformation,
+        CreateWellKnownSid, EqualSid, FreeSid, GetSecurityDescriptorDacl, GetTokenInformation,
         Isolation::{
             CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
         },
-        TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer, DACL_SECURITY_INFORMATION,
-        PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_CAPABILITIES, TOKEN_QUERY,
+        TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer,
+        WinCapabilityInternetClientSid, DACL_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
+        TOKEN_GROUPS, TOKEN_QUERY,
     },
     System::{Com::CoTaskMemFree, JobObjects::*, Threading::*},
     UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
@@ -21,6 +24,103 @@ use windows_sys::Win32::{
 
 pub const MEMORY_LIMIT_BYTES: usize = 512 * 1024 * 1024;
 pub const PROCESS_LIMIT: u32 = 1;
+const GROUP_ENABLED: u32 = 4; // SE_GROUP_ENABLED, required by SECURITY_CAPABILITIES.
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkAccess {
+    #[default]
+    None,
+    InternetClient,
+}
+impl NetworkAccess {
+    pub fn capability_count(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::InternetClient => 1,
+        }
+    }
+}
+
+struct InternetCapability {
+    sid: [usize; 16],
+    length: usize,
+}
+impl InternetCapability {
+    fn new() -> io::Result<Self> {
+        let mut capability = Self {
+            sid: [0; 16],
+            length: 0,
+        };
+        let mut bytes = mem::size_of_val(&capability.sid) as u32;
+        // SAFETY: fixed well-known capability; aligned bounded caller-owned SID storage.
+        checked(unsafe {
+            CreateWellKnownSid(
+                WinCapabilityInternetClientSid,
+                ptr::null_mut(),
+                capability.sid.as_mut_ptr().cast(),
+                &mut bytes,
+            )
+        })?;
+        if bytes < 8 || bytes as usize > mem::size_of_val(&capability.sid) {
+            return Err(io::Error::other("Invalid internetClient capability SID"));
+        }
+        capability.length = bytes as usize;
+        Ok(capability)
+    }
+}
+
+fn verify_capabilities(
+    buffer: &[usize],
+    returned_bytes: usize,
+    network: NetworkAccess,
+    internet: &InternetCapability,
+) -> io::Result<()> {
+    let bad = || io::Error::other("Unexpected AppContainer capabilities");
+    if returned_bytes < 4 || returned_bytes > mem::size_of_val(buffer) {
+        return Err(bad());
+    }
+    let count = buffer[0] as u32;
+    if count != network.capability_count() {
+        return Err(bad());
+    }
+    if count == 0 {
+        return Ok(());
+    }
+    let offset = mem::offset_of!(TOKEN_GROUPS, Groups);
+    if returned_bytes < offset + mem::size_of::<SID_AND_ATTRIBUTES>() {
+        return Err(bad());
+    }
+    // SAFETY: TOKEN_GROUPS entry offset has native alignment; size checked above.
+    let group = unsafe {
+        ptr::read(
+            buffer
+                .as_ptr()
+                .cast::<u8>()
+                .add(offset)
+                .cast::<SID_AND_ATTRIBUTES>(),
+        )
+    };
+    // Windows may also mark the enabled group mandatory/enabled-by-default.
+    // Deny-only, integrity, owner and all other attributes are refused.
+    if group.Attributes & GROUP_ENABLED == 0 || group.Attributes & !7 != 0 {
+        return Err(bad());
+    }
+    let base = buffer.as_ptr() as usize;
+    let position = (group.Sid as usize).checked_sub(base).ok_or_else(bad)?;
+    if position > returned_bytes || internet.length > returned_bytes - position {
+        return Err(bad());
+    }
+    // SAFETY: SID lies wholly in the returned buffer. Exact bytes avoid following
+    // an unvalidated SID pointer through any additional native calls.
+    let actual = unsafe { std::slice::from_raw_parts(group.Sid.cast::<u8>(), internet.length) };
+    let expected =
+        unsafe { std::slice::from_raw_parts(internet.sid.as_ptr().cast::<u8>(), internet.length) };
+    if actual != expected {
+        return Err(bad());
+    }
+    Ok(())
+}
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }
@@ -121,7 +221,7 @@ impl Profile {
             CreateAppContainerProfile(
                 name.as_ptr(),
                 wide("piko isolated trial").as_ptr(),
-                wide("Offline staged copy, one process").as_ptr(),
+                wide("Staged copy, one process").as_ptr(),
                 ptr::null(),
                 0,
                 &mut sid,
@@ -328,6 +428,15 @@ impl TrialProcess {
     }
 }
 pub fn launch(profile: &Profile, executable: &Path, directory: &Path) -> io::Result<TrialProcess> {
+    launch_with_network(profile, executable, directory, NetworkAccess::None)
+}
+
+pub fn launch_with_network(
+    profile: &Profile,
+    executable: &Path,
+    directory: &Path,
+    network: NetworkAccess,
+) -> io::Result<TrialProcess> {
     let path = executable
         .to_str()
         .ok_or_else(|| io::Error::other("Non-Unicode staged path"))?;
@@ -371,10 +480,19 @@ pub fn launch(profile: &Profile, executable: &Path, directory: &Path) -> io::Res
             mem::size_of_val(&limits) as u32,
         )
     })?;
+    let mut internet = InternetCapability::new()?;
+    let mut network_sid = SID_AND_ATTRIBUTES {
+        Sid: internet.sid.as_mut_ptr().cast(),
+        Attributes: GROUP_ENABLED,
+    };
     let capabilities = SECURITY_CAPABILITIES {
         AppContainerSid: profile.sid as *mut _,
-        Capabilities: ptr::null_mut(),
-        CapabilityCount: 0,
+        Capabilities: if network == NetworkAccess::InternetClient {
+            &mut network_sid
+        } else {
+            ptr::null_mut()
+        },
+        CapabilityCount: network.capability_count(),
         Reserved: 0,
     };
     let child_policy = 1u32; // PROCESS_CREATION_CHILD_PROCESS_RESTRICTED
@@ -448,10 +566,7 @@ pub fn launch(profile: &Profile, executable: &Path, directory: &Path) -> io::Res
                 &mut bytes,
             )
         })?;
-        // The first DWORD of TOKEN_GROUPS is GroupCount. No capability is granted.
-        if capability_buffer[0] as u32 != 0 {
-            return Err(io::Error::other("Unexpected AppContainer capabilities"));
-        }
+        verify_capabilities(&capability_buffer, bytes as usize, network, &internet)?;
         let mut in_job = 0;
         checked(unsafe { IsProcessInJob(process.raw(), job.raw(), &mut in_job) })?;
         if in_job == 0 {
@@ -479,6 +594,81 @@ pub fn launch(profile: &Profile, executable: &Path, directory: &Path) -> io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token_capability(buffer: &mut [usize], sid: &[u8], attributes: u32) -> usize {
+        buffer.fill(0);
+        buffer[0] = 1;
+        let group_offset = mem::offset_of!(TOKEN_GROUPS, Groups);
+        let sid_offset = group_offset + mem::size_of::<SID_AND_ATTRIBUTES>();
+        assert!(sid_offset + sid.len() <= mem::size_of_val(buffer));
+        // SAFETY: aligned native group slot and SID bytes fit in the test buffer.
+        unsafe {
+            let base = buffer.as_mut_ptr().cast::<u8>();
+            ptr::copy_nonoverlapping(sid.as_ptr(), base.add(sid_offset), sid.len());
+            ptr::write(
+                base.add(group_offset).cast::<SID_AND_ATTRIBUTES>(),
+                SID_AND_ATTRIBUTES {
+                    Sid: base.add(sid_offset).cast(),
+                    Attributes: attributes,
+                },
+            );
+        }
+        sid_offset + sid.len()
+    }
+
+    #[test]
+    fn capability_verification_requires_exact_enabled_internet_sid() -> io::Result<()> {
+        let internet = InternetCapability::new()?;
+        // SAFETY: initialized fixed well-known SID bytes owned by this test.
+        let sid = unsafe {
+            std::slice::from_raw_parts(internet.sid.as_ptr().cast::<u8>(), internet.length)
+        };
+        assert_eq!(sid, &[1, 2, 0, 0, 0, 0, 0, 15, 3, 0, 0, 0, 1, 0, 0, 0]);
+        let mut buffer = [0usize; 128];
+        assert!(verify_capabilities(&buffer, 4, NetworkAccess::None, &internet).is_ok());
+        assert!(verify_capabilities(&buffer, 3, NetworkAccess::None, &internet).is_err());
+        assert!(verify_capabilities(&buffer, 4, NetworkAccess::InternetClient, &internet).is_err());
+        let length = token_capability(&mut buffer, sid, GROUP_ENABLED);
+        assert!(
+            verify_capabilities(&buffer, length, NetworkAccess::InternetClient, &internet).is_ok()
+        );
+        assert!(verify_capabilities(&buffer, length, NetworkAccess::None, &internet).is_err());
+        buffer[0] = 2;
+        assert!(
+            verify_capabilities(&buffer, length, NetworkAccess::InternetClient, &internet).is_err()
+        );
+        for attributes in [0, 2, 0x14, 0x24, u32::MAX] {
+            let length = token_capability(&mut buffer, sid, attributes);
+            assert!(
+                verify_capabilities(&buffer, length, NetworkAccess::InternetClient, &internet)
+                    .is_err()
+            );
+        }
+        let mut other_sid = sid.to_vec();
+        *other_sid
+            .last_mut()
+            .ok_or_else(|| io::Error::other("empty test SID"))? = 1;
+        let length = token_capability(&mut buffer, &other_sid, GROUP_ENABLED);
+        assert!(
+            verify_capabilities(&buffer, length, NetworkAccess::InternetClient, &internet).is_err()
+        );
+        let length = token_capability(&mut buffer, sid, GROUP_ENABLED);
+        let offset = mem::offset_of!(TOKEN_GROUPS, Groups);
+        // SAFETY: test writes only the aligned existing group slot.
+        unsafe {
+            (*buffer
+                .as_mut_ptr()
+                .cast::<u8>()
+                .add(offset)
+                .cast::<SID_AND_ATTRIBUTES>())
+            .Sid = ptr::null_mut();
+        }
+        assert!(
+            verify_capabilities(&buffer, length, NetworkAccess::InternetClient, &internet).is_err()
+        );
+        Ok(())
+    }
+
     #[test]
     fn invalid_names_do_not_create_profiles() {
         for name in [

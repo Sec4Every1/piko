@@ -22,7 +22,7 @@ $hashes = foreach ($binary in $binaries) {
 }
 $manifest = @{product='piko'; version='0.2.0'; architecture='x64'; profile=$Profile; signed=$false; files=@($hashes)} | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $destination 'manifest.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
-foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Update-Piko.ps1','Backup-PikoInstallation.ps1','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
+foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Recover-Piko.cmd','Update-Piko.ps1','Backup-PikoInstallation.ps1','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
 Copy-Item -LiteralPath (Join-Path $workspace 'LICENSE') -Destination (Join-Path $destination 'LICENSE') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination (Join-Path $destination 'README.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\INSTALLATION.md') -Destination (Join-Path $destination 'LEGGIMI.md') -Force

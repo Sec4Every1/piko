@@ -43,7 +43,7 @@ fn archive_sample(store: &SqliteEventStore, budget: u64) -> ArchiveTelemetry {
         Ok(piko_common_model::ArchiveUsage {
             sampled_at_unix_ms,
             budget_bytes: budget,
-            database_limit_bytes: budget / 2,
+            database_limit_bytes: store.database_limit_bytes().map_err(|e| e.to_string())?,
             database_bytes,
             database_active_bytes: Some(store.active_database_bytes().map_err(|e| e.to_string())?),
             retention_months: store.retention_months(),

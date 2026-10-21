@@ -522,6 +522,21 @@ impl SqliteEventStore {
         Ok((fs::metadata(&self.path)?.len(), self.disk_bytes()?))
     }
 
+    /// Effective page limit on this SQLite connection, separate from the aggregate
+    /// database/WAL/SHM disk budget. Reading it does not change either limit.
+    pub fn database_limit_bytes(&self) -> Result<u64, StorageError> {
+        let pages: u64 = self
+            .connection
+            .pragma_query_value(None, "max_page_count", |row| row.get(0))?;
+        let size: u64 = self
+            .connection
+            .pragma_query_value(None, "page_size", |row| row.get(0))?;
+        pages
+            .checked_mul(size)
+            .filter(|bytes| *bytes > 0)
+            .ok_or_else(|| StorageError::Corrupt("invalid SQLite page limit accounting".into()))
+    }
+
     pub fn active_database_bytes(&self) -> Result<u64, StorageError> {
         let pages: u64 = self
             .connection
@@ -958,4 +973,52 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error("evidence JSON error: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn database_limit_reports_effective_connection_pragma_without_changing_integrity(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let fixture = Fixture(
+            std::env::temp_dir().join(format!("piko-effective-page-limit-{}", Uuid::new_v4())),
+        );
+        fs::create_dir(&fixture.0)?;
+        let config = StorageConfig {
+            max_disk_bytes: 8 * 1024 * 1024,
+            ..Default::default()
+        };
+        let mut store = SqliteEventStore::open(fixture.0.join("events.db"), config.clone())?;
+        let page_size: u64 = store
+            .connection
+            .pragma_query_value(None, "page_size", |row| row.get(0))?;
+        assert_eq!(store.verify_integrity()?.verified_events, 0);
+        let initial = store.database_limit_bytes()?;
+        assert_eq!(initial, config.max_disk_bytes / 2 / page_size * page_size);
+        let reduced_pages = initial / page_size / 2;
+        store
+            .connection
+            .pragma_update(None, "max_page_count", reduced_pages)?;
+        let reduced = store.database_limit_bytes()?;
+        assert_eq!(reduced, reduced_pages * page_size);
+        assert!(reduced < initial);
+        let before = store.verify_integrity()?;
+        let event = SecurityEvent::heartbeat(store.host_id(), Uuid::new_v4(), 1, 100, 1);
+        store.append_batch(&[event])?;
+        let after = store.verify_integrity()?;
+        assert_eq!(before.verified_events, 0);
+        assert_eq!(after.verified_events, 1);
+        assert!(after.head_hash.is_some());
+        assert_eq!(store.database_limit_bytes()?, reduced);
+        assert_eq!(store.verify_integrity()?, after);
+        Ok(())
+    }
 }

@@ -435,6 +435,25 @@ test('archive pressure exposes the effective database cap and explicit retention
  await page.goto('/');await page.locator('.sidebar nav').getByRole('button',{name:'Impostazioni',exact:true}).click();const panel=page.locator('.archive-panel');await expect(panel.getByRole('heading',{name:'Capacità archivio'})).toBeVisible();await expect(panel.getByText('128 MiB / 128 MiB',{exact:true})).toBeVisible();await expect(panel.getByRole('status')).toContainText('Scritture sospese');await expect(panel).toContainText('Conservazione automatica disattivata.');await expect(panel).toContainText('Il limite di spazio non accorcia il periodo di conservazione');
 });
 
+test('full internal database is distinguished from unused aggregate archive capacity',async({page})=>{
+ await installBridge(page);
+ await page.addInitScript(()=>{
+   const bridge=(window as unknown as {__TAURI_INTERNALS__:{invoke:(command:string,args?:Record<string,unknown>)=>Promise<unknown>}}).__TAURI_INTERNALS__;
+   const original=bridge.invoke;
+   bridge.invoke=async(command,args)=>{
+     const value=await original(command,args);
+     return command==='get_health'?{...(value as object),archive:{sampled_at_unix_ms:Date.now(),budget_bytes:2147483648,database_limit_bytes:1073741824,database_bytes:1073741824,database_active_bytes:1073741824,total_bytes:1074326704,retention_months:12,expired_events:0},sensors:[{id:'piko.storage',state:'degraded',detail:'database or disk is full',last_seen_unix_ms:null}]}:value;
+   };
+ });
+ await page.goto('/');
+ await page.locator('.sidebar nav').getByRole('button',{name:'Impostazioni',exact:true}).click();
+ const panel=page.locator('.archive-panel');
+ await expect(panel.getByRole('status')).toContainText('limite interno del database');
+ await expect(panel.getByRole('status')).toContainText('budget complessivo non è esaurito');
+ await expect(panel).toContainText('2048 MiB');
+ await expect(panel).toContainText('Conservazione: 12 mesi. Eventi scaduti: 0.');
+});
+
 test('failed-logon bursts name the attempted account and expose bounded original records',async({page})=>{
  await installBridge(page);await page.goto('/');await page.evaluate(()=>{const base=window.__PIKO_TEST__.alerts[0];const uuid=(i:number)=>'00000000-0000-0000-0000-'+i.toString(16).padStart(12,'0');window.__PIKO_TEST__.alerts=[{...base,id:'test-logon',rule_id:'failed-logon-burst',severity:'medium',assessment:{...base.assessment!,risk_score:50,factors:[{code:'repeated_bad_credentials',points:50}],context:{...base.assessment!.context,target_user:'alice',target_domain:'PC',source_ip:'192.0.2.10',logon_type:'10',failed_logons:{bucket_start:1791885600000,bucket_end:1791885660000,count:6,records:Array.from({length:6},(_,i)=>({event_id:uuid(i+1),evidence_id:uuid(i+100),event_time:1791885605000}))}}}}];});
  await page.getByRole('button',{name:'Aggiorna',exact:true}).click();await page.locator('[data-group-rule="failed-logon-burst"]').click();await expect(page.getByRole('heading',{name:'Accessi falliti ripetuti · PC\\alice',exact:true})).toBeVisible();await expect(page.getByTestId('risk-score')).toHaveText('50/100');await page.locator('.authentication-evidence > summary').click();const panel=page.locator('.authentication-evidence');await expect(panel.locator('.record')).toHaveCount(5);await panel.getByRole('button',{name:'Apri XML',exact:true}).first().click();await expect(panel.locator('pre')).toContainText('<Event');await panel.getByRole('button',{name:'Successive',exact:true}).click();await expect(panel.locator('.record')).toHaveCount(1);

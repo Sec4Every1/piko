@@ -135,3 +135,17 @@ Per preparare il recupero di un'installazione incoerente è disponibile
 configurazione, hash e metadati ACL in una nuova destinazione privata.
 Non corregge il manifest, non sostituisce file e non riavvia il servizio.
 Non comprende l'archivio eventi e non è ancora una procedura di ripristino.
+
+## Recupero esplicito di un'installazione incoerente
+
+Il nuovo **Recover-Piko.cmd** avvia la modalità di recupero con richiesta UAC.
+L'aggiornamento normale continua a rifiutare gli hash incoerenti. Il recupero
+conserva gli originali senza riscrivere il vecchio manifest, ferma il servizio,
+crea una copia verificata dell'archivio e controlla che la nuova build riesca a
+leggerlo prima di sostituire gli eseguibili. Servono spazio extra per il backup
+e dashboard/client chiusi. Non cambia account, ETW o Firewall.
+Errori provocano un tentativo di ripristino dei binari e dello stato precedente;
+il vecchio runtime incoerente non viene dichiarato qualificato. I backup restano
+disponibili. Questa procedura non ripristina automaticamente lo storico e non
+risolve un archivio già pieno. La prova reale richiede l'approvazione UAC; quella
+tentata durante lo sviluppo è stata annullata. Dettagli in ADR0036.

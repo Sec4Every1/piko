@@ -111,3 +111,35 @@ copies with manifest mismatch retained, private ACL and existing-destination
 refusal. A real six-file backup completed successfully in a private ProgramData
 directory. Service state remained Running; no installed file was replaced and no
 event archive was changed. Machine-specific copy metadata is intentionally excluded.
+
+## 2026-10-21: recovery, trial network contract and effective capacity
+
+Prior source e0b6217 is remotely green: Windows and dependency jobs passed in run
+[39441703542](https://github.com/Sec4Every1/piko/actions/runs/39441703542).
+New changes below need their own remote checkpoint; this prior run does not cover them.
+
+Explicit recovery (ADR0036): 20 fixture scenarios pass on PowerShell7 and Windows
+PowerShell5.1, including default refusal, read-only modes, strict replacement checks,
+changed originals, offline archive backup/gate, both initial states, exact rollback,
+known pre-existing quota warnings and rejection of newly introduced quota failures.
+Native read-only archive verification/gate tests pass. The live UAC launch was
+cancelled before execution; service and installed files remained unchanged. There
+is no live recovery/rollback qualification. Archive status already showed a full
+internal page limit; no quota/retention change or archive deletion was attempted.
+
+AppContainer (ADR0037): three contract unit tests and seven browser scenarios pass.
+An explicitly invoked benign native test created actual None and InternetClient
+tokens, wrote readiness in its own profile, stopped/removed both trials and
+confirmed original hashes. No network requests or global policy changes. This
+qualifies token creation/cleanup on the development Windows host, not outbound
+connectivity or a broad Windows matrix. Evidence: ignored .build/ logs.
+
+Capacity reporting (ADR0038): storage fixture confirms a controlled effective cap
+change is observed and event integrity stays valid. API/restricted contract tests:
+24 passed; archive browser scenarios: two passed. Reserve/admission policy unchanged.
+Full Rust workspace: 156 passed, five ignored (including the separately executed
+native token fixture and child harness fixtures invoked by parent tests).
+Targeted changed-crate Clippy and formatting passed; frontend check passed.
+Runtime and native desktop release builds passed. Native token qualification ran
+on Windows 10.0.26200.0. The local package is rebuilt and hash-checked separately;
+none of these build results establishes live installed recovery.

@@ -115,6 +115,10 @@ it('validates manual review bounds',()=>{const value={alert_id:'test',state:'ope
 describe('archive capacity',()=>{
  const archive={sampled_at_unix_ms:1000,budget_bytes:268435456,database_limit_bytes:134217728,database_bytes:134000000,total_bytes:135000000};
  it('keeps actual capacity and missing measurements explicit',()=>{expect(parseHealth({...health,archive}).archive).toEqual(archive);expect(parseHealth({...health,archive:null,archive_error:'Access denied'}).archive).toBeNull();});
+ it('accepts measured SQLite limits without assuming exactly half the configured budget',()=>{
+   for(const database_limit_bytes of [67108864,201326592])expect(parseHealth({...health,archive:{...archive,database_limit_bytes}}).archive?.database_limit_bytes).toBe(database_limit_bytes);
+   for(const database_limit_bytes of [0,511,archive.budget_bytes+512,134217729])expect(()=>parseHealth({...health,archive:{...archive,database_limit_bytes}})).toThrow('Invalid archive usage');
+ });
  it('accepts logical used space distinct from file allocation and validates retention',()=>{
   const current={...archive,database_active_bytes:50000000,retention_months:12,expired_events:20};
   expect(parseHealth({...health,archive:current}).archive).toEqual(current);
