@@ -5,14 +5,14 @@ Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
 ## Delivered and evidence
 - Public526f185: recovery ADR0036, frozen trial network contract ADR0037, measured
   archive capacity ADR0038, observed parent lifetimes ADR0039, Vite7.3.7 patch.
-  Run39560604506 dependencies passed; Windows in progress at last inspection.
-- Local storage group: e0b68e6 reserves pending main-file allocation and reclaims
+  Run39560604506 completed: both Windows and dependencies passed.
+- Reviewed storage group (published with its own CI pending): e0b68e6 reserves pending main-file allocation and reclaims
   small released-reader WALs with zero busy wait/restored timeout (ADR0040).
   73de1fa gates startup migration before writer/DDL, preserving safe interrupted
   empty bootstrap and refusing unknown/nonempty archives (ADR0041).
 - Latest storage slice:32-row/4MiB keyset detection backfill closes SELECT before
   admitted atomic annotation batches, includes derived bytes and advances through
-  unsupported candidates (ADR0042). Exact final commit is in git log.
+  unsupported candidates (ADR0042), code851ef6c. Exact publication commit is in git log.
 - Final Rust workspace169 passed/5 ignored; workspace Clippy/fmt passed. Frontend
   check,92 unit,67 browser,build passed on Vite7.3.7; npm audit zero vulnerabilities.
   New backfill tests preserve exact annotations/count/head, cover byte/row splits,
@@ -38,9 +38,9 @@ Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
 - No reserve reduction or budget increase. Existing transaction estimates and
   coarse migration gate are not formal worst-case proofs. Preserve unexpired
   evidence. Detailed audit and limits in ADR0038,0040-0042 and VALIDATION.
-- Storage checkpoints remain local while public526f185 full CI runs. Inspect that
-  matching run when useful, publish reviewed group once without cancelling a
-  costly in-progress run, then record new matching CI as pending. No idle polling.
+- Storage group was published after526f185 CI passed, without cancelling its run.
+  Inspect the matching new CI before claiming remote verification of storage code.
+  Continue independent ready work rather than idle polling or repeating passed builds.
 
 Constraints:MIT,no personal identifiers/runtime artifacts in tracked source;
 compact grouped UI with details/raw;12months within2GiB,stop on full.

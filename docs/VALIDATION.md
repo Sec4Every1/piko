@@ -62,9 +62,9 @@ Published checkpoint 706abfa: CI run 39558256349 Windows job passed; dependency
 job failed on newly reported Vite 7.3.6 launch-editor advisories. Vite is patched
 to 7.3.7, with the compatible minimum and lockfile updated. Local npm audit reports
 zero vulnerabilities; frontend check, all 92 unit tests, all 67 browser scenarios
-and production build passed. Patch526f185 run39560604506 dependency job passed;
-Windows job remains in progress at latest inspection. Later storage checkpoints
-are local only until published; do not attribute this CI result to their code.
+and production build passed. Patch526f185 run39560604506 completed successfully:
+both Windows and dependency jobs passed. The later reviewed storage group through
+851ef6c is published once with its own CI pending; the earlier CI does not verify it.
 Advisories: [GHSA-698v-4r3x-3vcv](https://github.com/advisories/GHSA-698v-4r3x-3vcv),
 [GHSA-r825-w8mm-5pxw](https://github.com/advisories/GHSA-r825-w8mm-5pxw),
 [GHSA-587h-7wmj-h5pm](https://github.com/advisories/GHSA-587h-7wmj-h5pm).
