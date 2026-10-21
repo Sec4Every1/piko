@@ -43,4 +43,3 @@ Vite patched to7.3.7: npm audit zero vulnerabilities; check,92 unit,67 browser a
 Constraints: MIT, no personal identifiers/runtime artifacts in tracked source;
 minimal grouped UI, progressive details/raw. Retain 12 months within 2 GiB and
 suspend on capacity. Replace this checkpoint at the next milestone.
-

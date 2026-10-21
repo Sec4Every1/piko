@@ -1,5 +1,18 @@
 # Validation
 
+## 2026-10-21: bounded checkpoint recovery (ADR0040)
+
+Real pinned WAL fixtures pass at 8/32 MiB: preserved snapshot/chain, repeated
+explicit refusal while pinned, projected main/WAL coexistence within budget;
+small WAL automatically resumes after release, WAL above16MiB requires test-only
+maintenance. Additional connection test passes busy-timeout restoration after
+busy, successful checkpoint and SQLite error. Counts/byte samples vary with
+random fixture UUID/index layout; assertions check limits, not fixed samples.
+Workspace before the added timeout test: 161 passed/5 ignored; the new timeout
+test passed separately. Workspace Clippy passed; final changed-crate recheck
+and release refresh follow. Tests run outside sandbox where native/temp-file
+access was initially denied; no installed archive or service changes.
+
 ## 2026-10-21: observed parent lifetime (ADR0039)
 
 Sensor/core/storage suites: 61 passed. Service suite: 11 passed; includes the

@@ -28,6 +28,8 @@ pub const MAX_QUERY_LIMIT: usize = 1000;
 pub const MAX_QUERY_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_BATCH_EVENTS: usize = 128;
 const MAX_BATCH_BYTES: usize = 4 * 1024 * 1024;
+// Automatic recovery must not turn one append into archive-scale maintenance.
+const MAX_AUTOMATIC_CHECKPOINT_BYTES: u64 = 16 * 1024 * 1024;
 const ZERO_HASH: [u8; 32] = [0; 32];
 
 #[derive(Clone, Debug)]
@@ -559,6 +561,67 @@ impl SqliteEventStore {
         }
         Ok(())
     }
+
+    fn pending_checkpoint_growth(&self) -> Result<u64, StorageError> {
+        // Include freelist pages: checkpoint writes allocated pages, not just
+        // currently active records. WAL truncation happens after main-file growth.
+        let pages: u64 = self
+            .connection
+            .pragma_query_value(None, "page_count", |r| r.get(0))?;
+        let size: u64 = self
+            .connection
+            .pragma_query_value(None, "page_size", |r| r.get(0))?;
+        let logical_bytes = pages
+            .checked_mul(size)
+            .ok_or_else(|| StorageError::Corrupt("invalid SQLite page accounting".into()))?;
+        Ok(logical_bytes.saturating_sub(fs::metadata(&self.path)?.len()))
+    }
+
+    fn ensure_append_budget(&self, estimated_growth: u64) -> Result<(), StorageError> {
+        let pending = self.pending_checkpoint_growth()?;
+        match self.check_budget(estimated_growth.saturating_add(pending)) {
+            Ok(()) => return Ok(()),
+            Err(StorageError::DiskBudgetExceeded) => {}
+            Err(error) => return Err(error),
+        }
+        // A released reader can leave a large physical WAL that prevents all
+        // future commits. Reclaim it only if simultaneous main/WAL allocation fits.
+        self.check_budget(pending)?;
+        let mut wal = self.path.as_os_str().to_os_string();
+        wal.push("-wal");
+        let wal_bytes = match fs::metadata(PathBuf::from(wal)) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error.into()),
+        };
+        if wal_bytes == 0
+            || wal_bytes > MAX_AUTOMATIC_CHECKPOINT_BYTES
+            || pending > MAX_AUTOMATIC_CHECKPOINT_BYTES
+        {
+            return Err(StorageError::DiskBudgetExceeded);
+        }
+        let previous_timeout: u64 =
+            self.connection
+                .pragma_query_value(None, "busy_timeout", |r| r.get(0))?;
+        self.connection.busy_timeout(Duration::ZERO)?;
+        let checkpoint = self
+            .connection
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((
+                    row.get::<_, u64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            });
+        // Restore connection policy on both success and SQLite error.
+        self.connection
+            .busy_timeout(Duration::from_millis(previous_timeout))?;
+        let (busy, _, _) = checkpoint?;
+        if busy != 0 {
+            return Err(StorageError::DiskBudgetExceeded);
+        }
+        self.check_budget(estimated_growth.saturating_add(self.pending_checkpoint_growth()?))
+    }
 }
 
 impl EventStore for SqliteEventStore {
@@ -643,7 +706,7 @@ impl EventStore for SqliteEventStore {
             });
         }
         // Conservative accounting includes index and WAL page amplification.
-        self.check_budget(
+        self.ensure_append_budget(
             (total_bytes as u64)
                 .saturating_mul(4)
                 .saturating_add(records.len() as u64 * 16_384)
@@ -978,6 +1041,92 @@ pub enum StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checkpoint_restores_busy_timeout_on_reader_busy_and_sqlite_error(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let path =
+            std::env::temp_dir().join(format!("piko-checkpoint-timeout-{}.db", Uuid::new_v4()));
+        let mut store = SqliteEventStore::open(
+            &path,
+            StorageConfig {
+                max_disk_bytes: 8 * 1024 * 1024,
+                ..Default::default()
+            },
+        )?;
+        let runtime = Uuid::new_v4();
+        store.append_batch(&[SecurityEvent::heartbeat(
+            store.host_id(),
+            runtime,
+            1,
+            100,
+            1,
+        )])?;
+        store.connection.busy_timeout(Duration::from_millis(137))?;
+        let reader =
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let pinned = reader.unchecked_transaction()?;
+        let _: u64 = pinned.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))?;
+        store.append_batch(&[SecurityEvent::heartbeat(
+            store.host_id(),
+            runtime,
+            2,
+            100,
+            2,
+        )])?;
+        let before = store.verify_integrity()?;
+        // Oversized estimate forces the checkpoint branch without adding records.
+        let oversized = store.config.max_disk_bytes;
+        assert!(matches!(
+            store.ensure_append_budget(oversized),
+            Err(StorageError::DiskBudgetExceeded)
+        ));
+        assert_eq!(
+            store
+                .connection
+                .pragma_query_value(None, "busy_timeout", |r| r.get::<_, u64>(0))?,
+            137
+        );
+        pinned.rollback()?;
+        drop(reader);
+        assert!(matches!(
+            store.ensure_append_budget(oversized),
+            Err(StorageError::DiskBudgetExceeded)
+        ));
+        assert_eq!(
+            store
+                .connection
+                .pragma_query_value(None, "busy_timeout", |r| r.get::<_, u64>(0))?,
+            137
+        );
+        assert_eq!(store.verify_integrity()?, before);
+
+        store.append_batch(&[SecurityEvent::heartbeat(
+            store.host_id(),
+            runtime,
+            3,
+            100,
+            3,
+        )])?;
+        let before = store.verify_integrity()?;
+        let own_snapshot = store.connection.unchecked_transaction()?;
+        let _: u64 = own_snapshot.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))?;
+        assert!(matches!(
+            store.ensure_append_budget(oversized),
+            Err(StorageError::Sqlite(_))
+        ));
+        assert_eq!(
+            store
+                .connection
+                .pragma_query_value(None, "busy_timeout", |r| r.get::<_, u64>(0))?,
+            137
+        );
+        own_snapshot.rollback()?;
+        assert_eq!(store.verify_integrity()?, before);
+        drop(store);
+        fs::remove_file(path)?;
+        Ok(())
+    }
 
     #[test]
     fn database_limit_reports_effective_connection_pragma_without_changing_integrity(
