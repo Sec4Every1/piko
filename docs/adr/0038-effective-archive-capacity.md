@@ -45,6 +45,8 @@ Writer audit before any reserve change:
 | Offline noise copy | Admitted event batches | Direct annotation/provenance writes, combined destination/backup space |
 | Checkpoint | Soft auto-checkpoint, explicit truncate | Inspect completion and account for simultaneous DB/WAL allocation |
 
-Next capacity milestone starts with fail-before-mutation startup migration
-admission and near-budget fixtures with missing indexes/pinned readers. Keep the
-half reserve until all paths have an admission argument; no live archive changes.
+ADR0040 adds pending main-file headroom and bounded small-WAL recovery. ADR0041
+adds conservative pre-writer startup migration admission and near-budget fixtures
+with missing indexes/pinned readers. Neither is a complete peak-size proof. Next
+bound startup detection backfill and maintenance. Keep the half reserve until all
+paths have an admission argument; no live archive changes.

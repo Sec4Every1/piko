@@ -1,5 +1,20 @@
 # Validation
 
+## 2026-10-21: startup migration headroom (ADR0041)
+
+Four real-SQLite fixture tests pass: pinned-reader near-budget complete-schema
+restart; missing-index refusal with unchanged main/WAL hashes then successful
+migration after test-only checkpoint; over-budget file untouched; initialization
+interruption recovery; refusal of host-deleted evidence, foreign tables and unknown
+metadata. A read-only review identified the interrupted-bootstrap regression;
+it was corrected and covered before this checkpoint.
+
+Workspace with initial two startup tests: 164 passed/5 ignored, Clippy clean.
+After the bootstrap correction, affected storage/service suites: 48 passed and
+changed-crate Clippy passed. Final release runtime/desktop builds passed; package
+refresh and four executable hashes are checked at the completion checkpoint. No installed service or
+archive changes. Conservative migration gate is not a worst-case DDL bound.
+
 ## 2026-10-21: bounded checkpoint recovery (ADR0040)
 
 Real pinned WAL fixtures pass at 8/32 MiB: preserved snapshot/chain, repeated
@@ -9,8 +24,8 @@ maintenance. Additional connection test passes busy-timeout restoration after
 busy, successful checkpoint and SQLite error. Counts/byte samples vary with
 random fixture UUID/index layout; assertions check limits, not fixed samples.
 Workspace before the added timeout test: 161 passed/5 ignored; the new timeout
-test passed separately. Workspace Clippy passed; final changed-crate recheck
-and release refresh follow. Tests run outside sandbox where native/temp-file
+test passed separately. Workspace Clippy and final changed-crate recheck passed.
+Tests run outside sandbox where native/temp-file
 access was initially denied; no installed archive or service changes.
 
 ## 2026-10-21: observed parent lifetime (ADR0039)
@@ -36,7 +51,9 @@ Published checkpoint 706abfa: CI run 39558256349 Windows job passed; dependency
 job failed on newly reported Vite 7.3.6 launch-editor advisories. Vite is patched
 to 7.3.7, with the compatible minimum and lockfile updated. Local npm audit reports
 zero vulnerabilities; frontend check, all 92 unit tests, all 67 browser scenarios
-and production build passed. Remote validation of this patch remains pending.
+and production build passed. Patch526f185 run39560604506 dependency job passed;
+Windows job remains in progress at latest inspection. Later storage checkpoints
+are local only until published; do not attribute this CI result to their code.
 Advisories: [GHSA-698v-4r3x-3vcv](https://github.com/advisories/GHSA-698v-4r3x-3vcv),
 [GHSA-r825-w8mm-5pxw](https://github.com/advisories/GHSA-r825-w8mm-5pxw),
 [GHSA-587h-7wmj-h5pm](https://github.com/advisories/GHSA-587h-7wmj-h5pm).

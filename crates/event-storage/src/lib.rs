@@ -263,6 +263,7 @@ impl SqliteEventStore {
         if path.as_os_str().is_empty() || path == Path::new(":memory:") {
             return Err(StorageError::Configuration);
         }
+        Self::preflight_startup_migration(&path, &config)?;
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent)?;
         }
@@ -506,9 +507,13 @@ impl SqliteEventStore {
     }
 
     fn disk_bytes(&self) -> Result<u64, StorageError> {
+        Self::files_bytes(&self.path)
+    }
+
+    fn files_bytes(path: &Path) -> Result<u64, StorageError> {
         let mut total = 0_u64;
         for suffix in ["", "-wal", "-shm"] {
-            let mut name = self.path.as_os_str().to_os_string();
+            let mut name = path.as_os_str().to_os_string();
             name.push(suffix);
             match fs::metadata(PathBuf::from(name)) {
                 Ok(metadata) => total = total.saturating_add(metadata.len()),
@@ -517,6 +522,125 @@ impl SqliteEventStore {
             }
         }
         Ok(total)
+    }
+
+    fn preflight_startup_migration(
+        path: &Path,
+        config: &StorageConfig,
+    ) -> Result<(), StorageError> {
+        let aggregate = Self::files_bytes(path)?;
+        if aggregate > config.max_disk_bytes {
+            return Err(StorageError::DiskBudgetExceeded);
+        }
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.len() != 0 => {}
+            Ok(_) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+        // Inspect an existing archive before journal settings, DDL, metadata or
+        // detection backfill can mutate it. Read-only WAL readers may update SHM.
+        let reader = match Self::reader(path, config.clone()) {
+            Ok(reader) => reader,
+            Err(error) => {
+                // First initialization is autocommitted in stages. A crash
+                // before identity insertion may leave an empty known schema.
+                if !Self::empty_initialization(path)? {
+                    return Err(error);
+                }
+                if aggregate.saturating_add(config.max_disk_bytes / 2) > config.max_disk_bytes {
+                    return Err(StorageError::DiskBudgetExceeded);
+                }
+                return Ok(());
+            }
+        };
+        for (kind, name) in [
+            ("table", "raw_evidence"),
+            ("table", "events"),
+            ("table", "detections"),
+            ("index", "events_type"),
+            ("index", "events_time"),
+            ("index", "events_evidence"),
+            ("index", "events_severity"),
+            ("index", "events_sensor_position"),
+            ("index", "events_type_position"),
+            ("index", "detections_event"),
+        ] {
+            let exists: bool = reader.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type=?1 AND name=?2)",
+                params![kind, name],
+                |row| row.get(0),
+            )?;
+            // A migration gets no automatic near-budget exception. This coarse
+            // half-budget headroom gate is not a worst-case DDL size proof.
+            if !exists
+                && aggregate.saturating_add(config.max_disk_bytes / 2) > config.max_disk_bytes
+            {
+                return Err(StorageError::DiskBudgetExceeded);
+            }
+        }
+        Ok(())
+    }
+
+    fn empty_initialization(path: &Path) -> Result<bool, StorageError> {
+        // Never bootstrap through a link after reader() rejected it.
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.is_file() || metadata.is_symlink() {
+            return Ok(false);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Ok(false);
+            }
+        }
+        let connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let object_count: u64 =
+            connection.query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))?;
+        if object_count > 32 {
+            return Ok(false);
+        }
+        let mut schema = connection.prepare("SELECT type,name FROM sqlite_schema LIMIT 32")?;
+        let objects = schema.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for object in objects {
+            let (kind, name) = object?;
+            match (kind.as_str(), name.as_str()) {
+                ("table", "metadata") => {
+                    let valid: bool = connection.query_row("SELECT count(*)<=1 AND coalesce(sum(key!='storage_version' OR value!='1'),0)=0 FROM metadata", [], |r| r.get(0))?;
+                    if !valid {
+                        return Ok(false);
+                    }
+                }
+                ("table", "events" | "raw_evidence" | "detections") => {
+                    // Table names are restricted to these exact literals above.
+                    let nonempty: bool = connection.query_row(
+                        &format!("SELECT EXISTS(SELECT 1 FROM {name})"),
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    if nonempty {
+                        return Ok(false);
+                    }
+                }
+                (
+                    "index",
+                    "events_type"
+                    | "events_time"
+                    | "events_evidence"
+                    | "events_severity"
+                    | "events_sensor_position"
+                    | "events_type_position"
+                    | "detections_event",
+                ) => {}
+                ("index", name) if name.starts_with("sqlite_autoindex_") => {}
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
     }
 
     /// Database bytes and aggregate database/WAL/SHM bytes, sampled on the storage worker.
