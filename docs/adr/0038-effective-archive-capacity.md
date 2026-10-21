@@ -47,6 +47,7 @@ Writer audit before any reserve change:
 
 ADR0040 adds pending main-file headroom and bounded small-WAL recovery. ADR0041
 adds conservative pre-writer startup migration admission and near-budget fixtures
-with missing indexes/pinned readers. Neither is a complete peak-size proof. Next
-bound startup detection backfill and maintenance. Keep the half reserve until all
+with missing indexes/pinned readers. ADR0042 adds keyset backfill, released readers
+and admitted atomic annotation batches. These are not complete peak-size proofs.
+Next bound retention/compression/direct-copy maintenance. Keep the half reserve until all
 paths have an admission argument; no live archive changes.

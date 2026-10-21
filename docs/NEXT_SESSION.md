@@ -1,26 +1,27 @@
 # Piko: resume checkpoint
 
-Updated: 2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
+Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
 
-## Delivered / verification
-- Public 526f185 includes recovery ADR0036, trial network contract ADR0037,
-  capacity telemetry ADR0038, parent lifetime view ADR0039 and Vite7.3.7 fix.
-  Run39560604506: dependencies passed; Windows still in progress when inspected.
-  Prior706abfa Windows passed, audit failed on Vite7.3.6 (now patched).
-- Local e0b68e6: append reserves pending main allocation; small released-reader
-  WAL recovery, zero busy wait/restored timeout,16MiB input gate (ADR0040).
-- New local migration slice: pre-writer aggregate/headroom gate; missing indexes
-  refuse near budget without DB/WAL mutation. Empty interrupted initialization
-  resumes; unknown objects/metadata or existing evidence never reidentified
-  (ADR0041). git log identifies the completed checkpoint.
-- Workspace with initial migration tests164 passed/5 ignored, Clippy clean;
-  after bootstrap correction, affected storage/service48 passed, Clippy/fmt clean.
-  Frontend check,92 unit,67 browser tests,build passed on Vite7.3.7; audit zero.
-  Final runtime/desktop release builds passed; package refresh follows checkpoint.
-- Existing local recovery fixtures20 each PS5.1/7; actual benign AppContainer token
-  modes/cleanup passed without network IO. Native trial is not outbound qualification.
+## Delivered and evidence
+- Public526f185: recovery ADR0036, frozen trial network contract ADR0037, measured
+  archive capacity ADR0038, observed parent lifetimes ADR0039, Vite7.3.7 patch.
+  Run39560604506 dependencies passed; Windows in progress at last inspection.
+- Local storage group: e0b68e6 reserves pending main-file allocation and reclaims
+  small released-reader WALs with zero busy wait/restored timeout (ADR0040).
+  73de1fa gates startup migration before writer/DDL, preserving safe interrupted
+  empty bootstrap and refusing unknown/nonempty archives (ADR0041).
+- Latest storage slice:32-row/4MiB keyset detection backfill closes SELECT before
+  admitted atomic annotation batches, includes derived bytes and advances through
+  unsupported candidates (ADR0042). Exact final commit is in git log.
+- Final Rust workspace169 passed/5 ignored; workspace Clippy/fmt passed. Frontend
+  check,92 unit,67 browser,build passed on Vite7.3.7; npm audit zero vulnerabilities.
+  New backfill tests preserve exact annotations/count/head, cover byte/row splits,
+  idempotence and pinned-reader quota refusal/recovery. Runtime and desktop release
+  rebuilds passed; package refresh and4 executable hashes verified at completion.
+- Local recovery fixtures20 each PS5.1/7; native benign AppContainer modes/cleanup
+  passed without network IO. No outbound connectivity or live install qualification.
 
-## Live installation / limits
+## Live installation and limits
 - Recovery UAC CANCELLED before helper execution. No live replacement, stop/restart
   or recovery archive copy. Do not reopen without renewed user direction.
 - Installed service remains running with binary/manifest mismatch. Earlier private
@@ -31,17 +32,16 @@ Updated: 2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
   rollback and outbound trial packet tests remain unqualified/unsupported.
 
 ## Exact next action
-- STORE-02: bound startup detection backfill. Current startup keeps a SELECT open
-  while inserting annotations. Use bounded position/keyset batches, release reader
-  before writes, include serialized annotation bytes in admission, test idempotent
-  replay, unsupported records, near-budget atomic refusal and unchanged evidence.
-  Then retention/compression/direct-copy admission and checkpoint peak proofs.
-- No reserve reduction or budget increase. Existing estimates/coarse migration gate
-  are not formal worst-case bounds. Preserve unexpired evidence and unknowns.
-- Storage checkpoints remain local while public526f185 full CI runs; do not cancel
-  that expensive run with repeated small pushes. Publish reviewed code once when
-  appropriate and record exact matching CI; avoid idle polling/cold build repeats.
+- STORE-02: design admission for retention and compression, then direct-copy
+  annotations/provenance. Cover main/WAL coexistence, pinned readers and rollback
+  without losing evidence; bounded implementation/tests before reserve changes.
+- No reserve reduction or budget increase. Existing transaction estimates and
+  coarse migration gate are not formal worst-case proofs. Preserve unexpired
+  evidence. Detailed audit and limits in ADR0038,0040-0042 and VALIDATION.
+- Storage checkpoints remain local while public526f185 full CI runs. Inspect that
+  matching run when useful, publish reviewed group once without cancelling a
+  costly in-progress run, then record new matching CI as pending. No idle polling.
 
 Constraints:MIT,no personal identifiers/runtime artifacts in tracked source;
-compact grouped UI with progressive details/raw;12months within2GiB,stop on full.
+compact grouped UI with details/raw;12months within2GiB,stop on full.
 Replace this checkpoint at the next milestone.

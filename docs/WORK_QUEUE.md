@@ -18,7 +18,7 @@ have a concrete user-visible result, tests/evidence and accurate capability stat
 | DET-01 | P2 BLOCKED | Behavioral/ransomware slice with measured file-change/canary signals, benign replay, bounded noise, evidence and remediation. Define measurable coverage and loss before claiming prevention. | Reliable sensors + APP-02 feasibility; requirements 24-27. Kernel mediation, if needed, is its own qualified milestone. |
 | GRAPH-01 | P2 VERIFIED-LOCAL | One-hop Windows-reported parent lifetime with same-snapshot identity/time checks, PID reuse/unknown/partial cases, event/raw refs and compact historical view. | ADR0039. Collector -> storage worker -> IPC and UI tests passed. Recursive ancestry, initiating-actor causality, live installed collection and attack paths remain open. |
 | STORE-01 | P2 READY | Next log-protection slice: encryption/key lifecycle and integrity checkpoint design, then bounded implementation with recovery/corruption tests. Preserve 12-month/2-GiB stop-on-full preference and noise filtering. | Existing storage/DPAPI; requirements 7-14/61-63, ADR 0028-0032. Local chain alone is not independent anchoring. |
-| STORE-02 | P1 ACTIVE | Effective capacity telemetry; pending main-file growth reserved on append; small-WAL checkpoint/retry after readers release; pre-writer near-budget migration gate and safe empty-bootstrap resumption. | ADR0038,0040,0041. Real8/32MiB fixtures pass; conservative gates do not bound every writer. No quota increase/reserve reduction; startup backfill, retention, compression, annotation and peak proofs remain open. |
+| STORE-02 | P1 ACTIVE | Effective capacity telemetry; checkpoint headroom/retry; pre-writer migration gate; safe empty bootstrap; bounded keyset detection backfill closes its reader before admitted atomic annotation batches. | ADR0038,0040-0042. Real8/32MiB fixtures pass; conservative gates do not bound every writer. No quota increase/reserve reduction; retention, compression, direct-copy writes and peak proofs remain open. |
 | RELEASE-01 | P2 BLOCKED | Signed/verifiable updates and qualified distribution, failure/rollback tests and installable artifacts for nontechnical users. | DEV-01/02; requirements 64/96-99; signing infrastructure/credentials need owner provision when required. |
 | FLEET-01 | P3 BLOCKED | Optional enrollment, authenticated sharing and response across real endpoints, minimum telemetry and offline autonomy. | Reliable single-host capabilities; requirements 56-60 and roadmap phase 15. |
 
@@ -30,9 +30,9 @@ them; do not mark an entire requirement complete from a small monitoring slice.
 ## Active task brief (replace when work starts)
 
 - ID: STORE-02, bounded investigation milestone before reserve changes.
-- First action: design admission for startup detection backfill, retention and
-  compression, covering checkpoint coexistence and rollback without evidence loss.
-  Append/checkpoint and pre-writer migration gates are implemented; do not mistake
+- First action: design admission for retention and compression, then direct-copy
+  annotations/provenance, covering checkpoint coexistence and rollback without
+  evidence loss. Startup keyset backfill and prior gates are implemented; do not mistake
   these conservative policies or soft WAL limits for a complete worst-case bound.
 - Acceptance: empirical regression coverage, explicitly not a worst-case bound.
   Every writer/checkpoint path needs a separate admission argument before a new

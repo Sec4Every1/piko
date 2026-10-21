@@ -350,23 +350,71 @@ impl SqliteEventStore {
             CREATE INDEX IF NOT EXISTS detections_event ON detections(event_id);")?;
         // Additive migration: historical evidence is evaluated too, without
         // re-ingestion or enforcement. Rule IDs make restart backfill idempotent.
-        let mut query = store.connection.prepare("SELECT payload FROM events e WHERE event_type IN ('windows.event_log.1102','windows.event_log.104','windows.event_log.4719','windows.event_log.7045','windows.event_log.4720','windows.event_log.4732','windows.event_log.4698','windows.event_log.4702','windows.event_log.5001','windows.event_log.5007','windows.event_log.1116','windows.event_log.1117') AND NOT EXISTS (SELECT 1 FROM detections d WHERE d.event_id=e.event_id)")?;
-        for row in query.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
-            let event = SecurityEvent::decode(&row?)?;
-            if let Some(alert) = piko_security_core::detect(&event) {
-                store.check_budget(16384)?;
-                store.connection.execute(
+        let mut store = store;
+        store.backfill_detections()?;
+        Ok(store)
+    }
+
+    fn backfill_detections(&mut self) -> Result<(), StorageError> {
+        let mut cursor = 0_i64;
+        loop {
+            let mut query = self.connection.prepare("SELECT position,payload FROM events e WHERE position>?1 AND event_type IN ('windows.event_log.1102','windows.event_log.104','windows.event_log.4719','windows.event_log.7045','windows.event_log.4720','windows.event_log.4732','windows.event_log.4698','windows.event_log.4702','windows.event_log.5001','windows.event_log.5007','windows.event_log.1116','windows.event_log.1117') AND NOT EXISTS (SELECT 1 FROM detections d WHERE d.event_id=e.event_id) ORDER BY position LIMIT 32")?;
+            let mut rows = query.query([cursor])?;
+            let mut annotations = Vec::new();
+            let mut scanned = 0;
+            let mut batch_bytes = 0_usize;
+            let mut annotation_bytes = 0_u64;
+            while let Some(row) = rows.next()? {
+                let position: i64 = row.get(0)?;
+                let payload: Vec<u8> = row.get(1)?;
+                let event = SecurityEvent::decode(&payload)?;
+                let annotation = piko_security_core::detect(&event)
+                    .map(|alert| {
+                        serde_json::to_vec(&alert).map(|bytes| (alert.id, event.event_id, bytes))
+                    })
+                    .transpose()?;
+                let derived_bytes = annotation.as_ref().map_or(0, |(_, _, bytes)| bytes.len());
+                let cost = payload.len().saturating_add(derived_bytes);
+                if batch_bytes.saturating_add(cost) > MAX_BATCH_BYTES {
+                    if scanned == 0 {
+                        return Err(StorageError::BatchTooLarge);
+                    }
+                    break;
+                }
+                batch_bytes += cost;
+                cursor = position; // Advance even when a source/version has no rule.
+                scanned += 1;
+                if let Some(annotation) = annotation {
+                    annotation_bytes = annotation_bytes.saturating_add(derived_bytes as u64);
+                    annotations.push(annotation);
+                }
+            }
+            // No read cursor remains pinned while checkpointing or inserting.
+            drop(rows);
+            drop(query);
+            if scanned == 0 {
+                return Ok(());
+            }
+            if annotations.is_empty() {
+                continue;
+            }
+            self.ensure_append_budget(
+                annotation_bytes
+                    .saturating_mul(4)
+                    .saturating_add(annotations.len() as u64 * 16_384)
+                    .saturating_add(65_536),
+            )?;
+            let transaction = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            for (id, event, payload) in annotations {
+                transaction.execute(
                     "INSERT OR IGNORE INTO detections(id,event_id,payload) VALUES(?1,?2,?3)",
-                    params![
-                        alert.id,
-                        event.event_id.to_string(),
-                        serde_json::to_vec(&alert)?
-                    ],
+                    params![id, event.to_string(), payload],
                 )?;
             }
+            transaction.commit()?;
         }
-        drop(query);
-        Ok(store)
     }
 
     pub fn alerts(&self) -> Result<Vec<piko_security_core::Alert>, StorageError> {

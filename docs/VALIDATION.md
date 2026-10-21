@@ -1,5 +1,16 @@
 # Validation
 
+## 2026-10-21: bounded historical detection backfill (ADR0042)
+
+Final workspace:169 passed/5 ignored; workspace Clippy and fmt passed. Three new
+real-SQLite backfill tests: unsupported first batch advances,70 detections restore
+exactly across repeated reopens,32 large events force the4MiB split, first batch
+refuses atomically with a pinned near-budget WAL and resumes after verified
+test-only checkpoint. Original event count/head/integrity remain unchanged.
+Runtime and desktop release builds passed. Frontend remains unchanged from the
+92 unit/67 browser/check/build/audit checks recorded above. Package refreshed and
+four executable hashes verified at the completion checkpoint. No live changes.
+
 ## 2026-10-21: startup migration headroom (ADR0041)
 
 Four real-SQLite fixture tests pass: pinned-reader near-budget complete-schema
