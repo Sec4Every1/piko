@@ -124,6 +124,12 @@ impl SqliteEventStore {
         if after < 0 {
             return Err(StorageError::Configuration);
         }
+        // A smaller replacement can still allocate WAL pages. Reserve pending
+        // main-file checkpoint growth before acquiring the maintenance transaction.
+        let maintenance_base = self
+            .disk_bytes()?
+            .saturating_add(self.pending_checkpoint_growth()?);
+        let maintenance_budget = self.config.max_disk_bytes;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -162,6 +168,15 @@ impl SqliteEventStore {
         drop(rows);
         drop(query);
         let changed = updates.len() as u64;
+        if changed != 0 {
+            let estimated_growth = (original_bytes as u64)
+                .saturating_mul(4)
+                .saturating_add(changed * 16_384)
+                .saturating_add(65_536);
+            if maintenance_base.saturating_add(estimated_growth) > maintenance_budget {
+                return Err(StorageError::DiskBudgetExceeded);
+            }
+        }
         for (id, payload) in updates {
             transaction.execute(
                 "UPDATE raw_evidence SET payload=?1 WHERE rowid=?2",
@@ -1213,6 +1228,60 @@ pub enum StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compression_refuses_without_rewriting_legacy_evidence_when_headroom_is_missing(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let path =
+            std::env::temp_dir().join(format!("piko-compression-budget-{}.db", Uuid::new_v4()));
+        let mut store = SqliteEventStore::open(
+            &path,
+            StorageConfig {
+                max_disk_bytes: 8 * 1024 * 1024,
+                ..Default::default()
+            },
+        )?;
+        let raw = RawEvidence {
+            evidence_id: Uuid::new_v4(),
+            source: "fixture".into(),
+            content_type: "application/octet-stream".into(),
+            observed_at_unix_ms: 100,
+            bytes: vec![120; 500_000],
+        };
+        let mut event = SecurityEvent::heartbeat(store.host_id(), Uuid::new_v4(), 1, 100, 1);
+        event.raw_evidence_reference = Some(raw.evidence_id);
+        store.append_records(&[EventRecord {
+            event,
+            raw_evidence: Some(raw.clone()),
+        }])?;
+        let legacy = serde_json::to_vec(&raw)?;
+        store.connection.execute(
+            "UPDATE raw_evidence SET payload=?1 WHERE evidence_id=?2",
+            params![legacy, raw.evidence_id.to_string()],
+        )?;
+        let before = store.verify_integrity()?;
+        assert!(matches!(
+            store.compress_existing_evidence(0),
+            Err(StorageError::DiskBudgetExceeded)
+        ));
+        let stored: Vec<u8> = store.connection.query_row(
+            "SELECT payload FROM raw_evidence WHERE evidence_id=?1",
+            [raw.evidence_id.to_string()],
+            |r| r.get(0),
+        )?;
+        assert_eq!(stored, legacy);
+        assert_eq!(store.verify_integrity()?, before);
+        assert_eq!(
+            store
+                .raw_evidence(raw.evidence_id)?
+                .ok_or("missing evidence")?
+                .bytes,
+            raw.bytes
+        );
+        drop(store);
+        fs::remove_file(path)?;
+        Ok(())
+    }
 
     #[test]
     fn checkpoint_restores_busy_timeout_on_reader_busy_and_sqlite_error(

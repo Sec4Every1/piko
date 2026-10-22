@@ -1,5 +1,21 @@
 # Validation
 
+## 2026-10-22: compression write admission
+
+Compression reserves pending main-file allocation plus a conservative estimate
+of original bytes/index/WAL growth before its first UPDATE. No updates means no
+extra admission requirement. Storage suite passed before the additional targeted
+legacy-evidence refusal test; that new test passed separately and verifies byte-
+identical payload, raw data and integrity after refusal. Changed-crate Clippy
+passed. This is a source change, not a rebuilt package or installed runtime, and
+the amplification estimate is not a formal peak bound. Retention admission remains open.
+
+## 2026-10-22: remote storage checkpoint qualification
+
+GitHub Actions run39562792228 for3b0653f completed successfully, verified via
+the GitHub API. This verifies the published storage group in automated CI;
+it does not qualify the installed service, live recovery or outbound trial traffic.
+
 ## 2026-10-21: bounded historical detection backfill (ADR0042)
 
 Final workspace:169 passed/5 ignored; workspace Clippy and fmt passed. Three new

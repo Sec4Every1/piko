@@ -1,12 +1,13 @@
 # Piko: resume checkpoint
 
-Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
+Updated:2026-10-22. Read AGENTS.md and WORK_QUEUE.md; check git status first.
 
 ## Delivered and evidence
 - Public526f185: recovery ADR0036, frozen trial network contract ADR0037, measured
   archive capacity ADR0038, observed parent lifetimes ADR0039, Vite7.3.7 patch.
   Run39560604506 completed: both Windows and dependencies passed.
-- Reviewed storage group (published with its own CI pending): e0b68e6 reserves pending main-file allocation and reclaims
+- Reviewed storage group published as3b0653f: run39562792228 completed successfully,
+  verified2026-10-22. e0b68e6 reserves pending main-file allocation and reclaims
   small released-reader WALs with zero busy wait/restored timeout (ADR0040).
   73de1fa gates startup migration before writer/DDL, preserving safe interrupted
   empty bootstrap and refusing unknown/nonempty archives (ADR0041).
@@ -32,6 +33,12 @@ Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
   rollback and outbound trial packet tests remain unqualified/unsupported.
 
 ## Exact next action
+- Latest local source: compression now reserves pending checkpoint allocation and
+  estimated WAL/index growth before rewriting any selected legacy evidence.
+  No-op scans remain permitted. Storage suite and targeted atomic refusal test
+  passed; Clippy clean. Not rebuilt/installed; estimate is not a worst-case proof.
+- Next implement retention admission with verified checkpoint/deletion accounting,
+  preserving no-op expiry and rollback; compression retry/peak tests remain open.
 - STORE-02: design admission for retention and compression, then direct-copy
   annotations/provenance. Cover main/WAL coexistence, pinned readers and rollback
   without losing evidence; bounded implementation/tests before reserve changes.
@@ -39,7 +46,7 @@ Updated:2026-10-21. Read AGENTS.md and WORK_QUEUE.md; check git status first.
   coarse migration gate are not formal worst-case proofs. Preserve unexpired
   evidence. Detailed audit and limits in ADR0038,0040-0042 and VALIDATION.
 - Storage group was published after526f185 CI passed, without cancelling its run.
-  Inspect the matching new CI before claiming remote verification of storage code.
+  Its matching CI39562792228 also passed. Later changes need their own verification.
   Continue independent ready work rather than idle polling or repeating passed builds.
 
 Constraints:MIT,no personal identifiers/runtime artifacts in tracked source;
