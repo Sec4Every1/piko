@@ -37,8 +37,13 @@ Updated:2026-10-22. Read AGENTS.md and WORK_QUEUE.md; check git status first.
   estimated WAL/index growth before rewriting any selected legacy evidence.
   No-op scans remain permitted. Storage suite and targeted atomic refusal test
   passed; Clippy clean. Not rebuilt/installed; estimate is not a worst-case proof.
-- Next implement retention admission with verified checkpoint/deletion accounting,
-  preserving no-op expiry and rollback; compression retry/peak tests remain open.
+- Retention admission now includes pending main allocation, verified event/raw
+  bytes, deleted annotation bytes and serialized checkpoint metadata before DELETE.
+  Real pinned8/32MiB fixtures preserve all records/checkpoint on refusal; no-op
+  expiry remains allowed. Storage41 tests and Clippy passed; worker test recorded
+  in .build/retention-worker-test.txt. Source only, not rebuilt or installed.
+- Next: direct-copy annotation/provenance admission; maintenance retry/peak tests
+  and formal amplification bounds remain open. Do not reduce reserve or quota.
 - STORE-02: design admission for retention and compression, then direct-copy
   annotations/provenance. Cover main/WAL coexistence, pinned readers and rollback
   without losing evidence; bounded implementation/tests before reserve changes.

@@ -138,6 +138,12 @@ impl SqliteEventStore {
         if cutoff < checkpoint.cutoff_unix_ms {
             return Ok(0);
         }
+        // Deletion and checkpoint metadata still generate WAL before space can
+        // be reused. Admission never assumes that expiry immediately frees disk.
+        let maintenance_base = self
+            .disk_bytes()?
+            .saturating_add(self.pending_checkpoint_growth()?);
+        let maintenance_budget = self.config.max_disk_bytes;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -225,6 +231,19 @@ impl SqliteEventStore {
         let json = serde_json::to_string(&checkpoint)?;
         if json.len() > MAX_QUERY_BYTES {
             return Err(StorageError::Configuration);
+        }
+        let annotation_bytes: u64 = transaction.query_row(
+            "SELECT coalesce(sum(length(payload)),0) FROM detections WHERE event_id IN (SELECT event_id FROM events WHERE position<=?1)",
+            [checkpoint.position], |r| r.get(0),
+        )?;
+        let estimated_growth = (bytes as u64)
+            .saturating_add(json.len() as u64)
+            .saturating_add(annotation_bytes)
+            .saturating_mul(4)
+            .saturating_add(count * 16_384)
+            .saturating_add(65_536);
+        if maintenance_base.saturating_add(estimated_growth) > maintenance_budget {
+            return Err(StorageError::DiskBudgetExceeded);
         }
         transaction.execute("DELETE FROM detections WHERE event_id IN (SELECT event_id FROM events WHERE position<=?1)",[checkpoint.position])?;
         transaction.execute(

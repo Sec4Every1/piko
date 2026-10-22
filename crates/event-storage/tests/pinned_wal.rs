@@ -73,6 +73,14 @@ fn exercise_pinned_reader(budget: u64, automatic: bool) -> Result<(), Box<dyn Er
     assert_eq!(store.count()?, accepted);
     let before = store.verify_integrity()?;
     assert_eq!(before.verified_events, accepted);
+    // A no-op expiry is allowed at capacity; an actual deletion needs headroom.
+    assert_eq!(store.expire_before(100)?, 0);
+    assert!(matches!(
+        store.expire_before(101),
+        Err(StorageError::DiskBudgetExceeded)
+    ));
+    assert_eq!(store.verify_integrity()?, before);
+    assert_eq!(store.expired_events()?, 0);
     let inspector = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let logical_pages: u64 = inspector.pragma_query_value(None, "page_count", |r| r.get(0))?;
     let page_size: u64 = inspector.pragma_query_value(None, "page_size", |r| r.get(0))?;

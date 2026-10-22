@@ -1,5 +1,15 @@
 # Validation
 
+## 2026-10-22: retention transaction admission
+
+Before deleting expired records, admission accounts for pending main-file growth,
+decoded event/raw bytes, deleted detection payloads and checkpoint metadata, with
+conservative WAL/index amplification. No-op expiry skips the extra requirement.
+All41 storage tests passed, including real pinned8/32MiB fixtures: actual expiry
+refuses at capacity without changing head/count/expired checkpoint; no-op expiry
+still returns0. Changed-crate Clippy passed. Existing normal expiry/restart tests
+still pass. Estimate is not a formal peak guarantee; source not installed/rebuilt.
+
 ## 2026-10-22: compression write admission
 
 Compression reserves pending main-file allocation plus a conservative estimate
