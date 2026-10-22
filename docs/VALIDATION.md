@@ -1,5 +1,16 @@
 # Validation
 
+## 2026-10-22: archive copy admission
+
+Noise-copy destination now admits annotation/provenance writes with pending
+checkpoint headroom, bounds annotation fields before loading and verifies final
+checkpoint completion/aggregate usage. Oversized annotation regression refuses
+copy while preserving source chain and exact source annotation length. Storage
+suite passed, followed by final affected noise test and Clippy after text bounds.
+No source archive deletion, live installation or package rebuild. Estimates
+remain conservative heuristics, not a proof of all transient peaks; a failed
+destination is incomplete and must never replace the preserved source.
+
 ## 2026-10-22: retention transaction admission
 
 Before deleting expired records, admission accounts for pending main-file growth,

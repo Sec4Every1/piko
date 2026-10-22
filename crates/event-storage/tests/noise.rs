@@ -90,6 +90,16 @@ fn noise_copy_preserves_security_evidence_bookmarks_and_detection_links(
         .is_none());
     assert_eq!(store.verify_integrity()?, original); // Source chain never changed.
     assert!(store.copy_without_noise(&target).is_err()); // Existing output is never overwritten.
+    conn.execute("UPDATE detections SET payload=zeroblob(4194305)", [])?;
+    let oversized_target = dir.join("oversized-copy.db");
+    assert!(store.copy_without_noise(&oversized_target).is_err());
+    assert_eq!(store.verify_integrity()?, original);
+    let retained_size: u64 = conn.query_row(
+        "SELECT length(payload) FROM detections WHERE id='future-rule'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(retained_size, 4_194_305);
     conn.execute("UPDATE events SET hash=zeroblob(32) WHERE position=2", [])?;
     assert!(store
         .copy_without_noise(&dir.join("corrupt-copy.db"))

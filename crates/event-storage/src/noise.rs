@@ -93,15 +93,26 @@ impl SqliteEventStore {
         // reviewer state or rule versions from the current binary.
         let mut detections = self
             .connection
-            .prepare("SELECT id,event_id,payload FROM detections")?;
+            .prepare("SELECT CASE WHEN length(id)<=256 THEN id ELSE NULL END,CASE WHEN length(event_id)<=36 THEN event_id ELSE NULL END,CASE WHEN length(payload)<=4194304 THEN payload ELSE NULL END FROM detections")?;
         for row in detections.query_map([], |r| {
             Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, Vec<u8>>(2)?,
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<Vec<u8>>>(2)?,
             ))
         })? {
             let (id, event, payload) = row?;
+            let id =
+                id.ok_or_else(|| StorageError::Corrupt("oversized detection identity".into()))?;
+            let event = event
+                .ok_or_else(|| StorageError::Corrupt("oversized detection reference".into()))?;
+            let payload = payload
+                .ok_or_else(|| StorageError::Corrupt("oversized detection annotation".into()))?;
+            target.ensure_append_budget(
+                (payload.len() as u64)
+                    .saturating_mul(4)
+                    .saturating_add(16_384 + 65_536),
+            )?;
             target.connection.execute(
                 "INSERT OR REPLACE INTO detections(id,event_id,payload) VALUES(?1,?2,?3)",
                 params![id, event, payload],
@@ -118,13 +129,28 @@ impl SqliteEventStore {
             removed,
             chain_rebuilt: true,
         };
+        let provenance = serde_json::to_string(&report)?;
+        if provenance.len() > MAX_QUERY_BYTES {
+            return Err(StorageError::QueryResultTooLarge);
+        }
+        target.ensure_append_budget(
+            (provenance.len() as u64)
+                .saturating_mul(4)
+                .saturating_add(81_920),
+        )?;
         target.connection.execute(
             "INSERT INTO metadata(key,value) VALUES('noise_cleanup_provenance',?1)",
-            [serde_json::to_string(&report)?],
+            [provenance],
         )?;
-        target
-            .connection
-            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        target.check_budget(target.pending_checkpoint_growth()?)?;
+        let busy: u64 =
+            target
+                .connection
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))?;
+        if busy != 0 {
+            return Err(StorageError::DiskBudgetExceeded);
+        }
+        target.check_budget(0)?;
         Ok(report)
     }
 }

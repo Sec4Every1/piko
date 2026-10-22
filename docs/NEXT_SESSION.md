@@ -42,8 +42,12 @@ Updated:2026-10-22. Read AGENTS.md and WORK_QUEUE.md; check git status first.
   Real pinned8/32MiB fixtures preserve all records/checkpoint on refusal; no-op
   expiry remains allowed. Storage41 tests and Clippy passed; worker test recorded
   in .build/retention-worker-test.txt. Source only, not rebuilt or installed.
-- Next: direct-copy annotation/provenance admission; maintenance retry/peak tests
-  and formal amplification bounds remain open. Do not reduce reserve or quota.
+- Direct-copy admission now covers annotations/provenance; annotation text/payload
+  reads are bounded, final checkpoint completion and aggregate usage checked.
+  Oversized annotations refuse without altering source evidence. Storage suite,
+  final affected noise test and Clippy pass; source not rebuilt/installed.
+- Next: maintenance retry/peak regression tests and conservative bound review for
+  all writers, then installed runtime qualification. Do not reduce reserve/quota.
 - STORE-02: design admission for retention and compression, then direct-copy
   annotations/provenance. Cover main/WAL coexistence, pinned readers and rollback
   without losing evidence; bounded implementation/tests before reserve changes.
