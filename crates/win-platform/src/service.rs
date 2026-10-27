@@ -59,6 +59,9 @@ static ENTRY: OnceLock<Entry> = OnceLock::new();
 
 pub struct ServiceContext {
     pub stop: watch::Receiver<bool>,
+    /// Ephemeral SCM StartService arguments, including the service name first.
+    /// These are distinct from the permanent executable command line.
+    pub start_arguments: Vec<OsString>,
     status: ServiceStatusHandle,
 }
 impl ServiceContext {
@@ -101,7 +104,7 @@ fn status(state: ServiceState, exit: u32) -> ServiceStatus {
 // SAFETY: windows-service owns SCM callback argument parsing and handler lifetime.
 // No raw callback pointers or references cross this crate's public interface.
 define_windows_service!(ffi_main, service_main);
-fn service_main(_arguments: Vec<OsString>) {
+fn service_main(arguments: Vec<OsString>) {
     let (sender, receiver) = watch::channel(false);
     let handle = match service_control_handler::register(SERVICE_NAME, move |control| match control
     {
@@ -124,6 +127,7 @@ fn service_main(_arguments: Vec<OsString>) {
     let code = match ENTRY.get() {
         Some(entry) => entry(ServiceContext {
             stop: receiver,
+            start_arguments: arguments,
             status: handle,
         }),
         None => 1,

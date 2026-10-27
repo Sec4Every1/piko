@@ -12,6 +12,7 @@ use std::{
 use windows_sys::Win32::{
     Foundation::LocalFree, Security::Cryptography::*, Storage::FileSystem::*,
 };
+use zeroize::Zeroize;
 
 pub const MAX_CONTENT: usize = 16 * 1024 * 1024;
 
@@ -42,6 +43,23 @@ pub struct LockedFile {
 }
 
 impl LockedFile {
+    /// Existing inspected file, writable only to flush/recover durable material.
+    /// Never creates or truncates the destination.
+    pub fn open_for_update(path: &Path) -> io::Result<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE)
+            .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)?;
+        let (path, identity) = Self::inspect(&file)?;
+        Ok(Self {
+            file,
+            path,
+            identity,
+        })
+    }
     pub fn open(path: &Path) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -228,6 +246,12 @@ fn crypt(bytes: &[u8], decrypt: bool) -> io::Result<Vec<u8>> {
         // SAFETY: successful DPAPI call returns this allocated initialized byte range.
         Ok(unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec())
     };
+    if decrypt && !output.pbData.is_null() && output.cbData as usize <= MAX_CONTENT + 64 * 1024 {
+        // SAFETY: successful DPAPI owns this writable allocation until LocalFree;
+        // the bounded byte range is the same one copied above. Wipe the native
+        // plaintext copy as well as callers' managed secret buffers.
+        unsafe { std::slice::from_raw_parts_mut(output.pbData, output.cbData as usize) }.zeroize();
+    }
     // SAFETY: DPAPI output belongs to LocalAlloc; released exactly once.
     unsafe { LocalFree(output.pbData.cast()) };
     result

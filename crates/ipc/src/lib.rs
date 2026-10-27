@@ -1,5 +1,7 @@
 //! Bounded local API. Response commands require separate caller authorization.
 #![forbid(unsafe_code)]
+mod evidence_keys;
+pub use evidence_keys::*;
 
 use piko_common_model::HealthSnapshot;
 use piko_event_schema::{RawEvidence, SecurityEvent};
@@ -44,6 +46,25 @@ pub enum Command {
     },
     GetHealth,
     GetArchiveMaintenance,
+    GetEvidenceKeyStatus,
+    BeginKeyBackup,
+    CancelKeyBackup {
+        ticket_id: uuid::Uuid,
+    },
+    AuthorizeKeyBackup {
+        ticket_id: uuid::Uuid,
+    },
+    ReadKeyBackup {
+        ticket_id: uuid::Uuid,
+    },
+    ConfirmKeyBackup {
+        ticket_id: uuid::Uuid,
+        code: SecretText,
+    },
+    BeginEvidenceProtection,
+    AuthorizeEvidenceProtection {
+        ticket_id: uuid::Uuid,
+    },
     GetObservations,
     GetInvestigation {
         process_instance: uuid::Uuid,
@@ -67,10 +88,25 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn is_key_command(&self) -> bool {
+        matches!(
+            self,
+            Self::GetEvidenceKeyStatus
+                | Self::BeginKeyBackup
+                | Self::CancelKeyBackup { .. }
+                | Self::AuthorizeKeyBackup { .. }
+                | Self::ReadKeyBackup { .. }
+                | Self::ConfirmKeyBackup { .. }
+                | Self::BeginEvidenceProtection
+                | Self::AuthorizeEvidenceProtection { .. }
+        )
+    }
     pub fn is_response_mutation(&self) -> bool {
         matches!(
             self,
             Self::PrepareQuarantine { .. }
+                | Self::AuthorizeKeyBackup { .. }
+                | Self::AuthorizeEvidenceProtection { .. }
                 | Self::PrepareRestore { .. }
                 | Self::ExecuteAction { .. }
         )
@@ -88,6 +124,10 @@ pub enum ApiData {
     Action(piko_security_core::Action),
     Health(HealthSnapshot),
     ArchiveMaintenance(piko_event_storage::ArchiveMaintenanceStatus),
+    EvidenceKeyStatus(EvidenceKeyStatus),
+    KeyBackupTicket(KeyBackupTicket),
+    KeyBackup(KeyBackupReply),
+    EvidenceProtectionTicket(EvidenceProtectionTicket),
     Observations(piko_common_model::ObservationSnapshot),
     Investigation(piko_security_core::Investigation),
     Events(Vec<SecurityEvent>),
@@ -121,9 +161,10 @@ pub async fn read_frame<T: DeserializeOwned>(
             "IPC frame exceeds permitted size",
         ));
     }
-    let mut bytes = vec![0u8; length];
+    let mut bytes = zeroize::Zeroizing::new(vec![0u8; length]);
     stream.read_exact(&mut bytes).await?;
-    serde_json::from_slice(&bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    serde_json::from_slice(&bytes)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid IPC frame payload"))
 }
 
 pub async fn write_frame<T: Serialize>(
@@ -131,7 +172,7 @@ pub async fn write_frame<T: Serialize>(
     value: &T,
     max: usize,
 ) -> io::Result<()> {
-    let bytes = serde_json::to_vec(value).map_err(io::Error::other)?;
+    let bytes = zeroize::Zeroizing::new(serde_json::to_vec(value).map_err(io::Error::other)?);
     if bytes.is_empty() || bytes.len() > max || bytes.len() > u32::MAX as usize {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -141,6 +182,11 @@ pub async fn write_frame<T: Serialize>(
     stream.write_u32_le(bytes.len() as u32).await?;
     stream.write_all(&bytes).await?;
     stream.flush().await
+}
+
+pub fn serialized_length<T: Serialize>(value: &T) -> io::Result<usize> {
+    let bytes = zeroize::Zeroizing::new(serde_json::to_vec(value).map_err(io::Error::other)?);
+    Ok(bytes.len())
 }
 
 #[cfg(windows)]

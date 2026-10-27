@@ -1,3 +1,10 @@
+mod evidence_protection;
+mod key_bundle;
+mod key_recovery;
+mod key_worker;
+pub(super) use key_recovery::recover_service_keys;
+mod archive_verification;
+pub(super) use archive_verification::{archive_capabilities, verify_service_archive};
 mod image_files;
 mod image_repetition;
 mod performance;
@@ -70,11 +77,7 @@ fn verify_evidence_archive(
     // SQLite can still create/update transient WAL shared-memory metadata.
     let store = piko_event_storage::SqliteEventStore::reader(
         config.data_dir.join("events.db"),
-        StorageConfig {
-            max_disk_bytes: config.max_disk_mib * 1024 * 1024,
-            retention_months: config.retention_months,
-            ..Default::default()
-        },
+        storage_config(config),
     )?;
     Ok(store.verify_integrity()?)
 }
@@ -94,12 +97,10 @@ pub fn compact_evidence() -> Result<(), Box<dyn Error>> {
     }
     let config = Config::from_reader(std::fs::File::open(&args[2])?)?;
     config.validate()?;
+    require_no_pending_archive_verification(&config)?;
     let mut store = piko_event_storage::SqliteEventStore::open(
         config.data_dir.join("events.db"),
-        StorageConfig {
-            max_disk_bytes: config.max_disk_mib * 1024 * 1024,
-            ..Default::default()
-        },
+        storage_config(&config),
     )?;
     let before = store.verify_integrity()?;
     let (mut cursor, mut scanned, mut changed, mut saved) = (0, 0, 0, 0);
@@ -137,13 +138,10 @@ pub fn remove_noise() -> Result<(), Box<dyn Error>> {
     }
     let config = Config::from_reader(std::fs::File::open(&args[2])?)?;
     config.validate()?;
+    require_no_pending_archive_verification(&config)?;
     let source = piko_event_storage::SqliteEventStore::reader(
         config.data_dir.join("events.db"),
-        StorageConfig {
-            max_disk_bytes: config.max_disk_mib * 1024 * 1024,
-            retention_months: config.retention_months,
-            ..Default::default()
-        },
+        storage_config(&config),
     )?;
     let destination = config.data_dir.join("events.without-noise.db");
     let report = source.copy_without_noise(&destination)?;
@@ -162,6 +160,8 @@ struct Config {
     viewer_sid: Option<String>,
     response_roots: Option<Vec<PathBuf>>,
     retention_months: Option<u8>,
+    protect_raw_evidence: bool,
+    recoverable_raw_evidence: bool,
     archive_maintenance: bool,
 }
 
@@ -176,6 +176,8 @@ impl Default for Config {
             viewer_sid: None,
             response_roots: None,
             retention_months: None,
+            protect_raw_evidence: false,
+            recoverable_raw_evidence: false,
             archive_maintenance: true,
         }
     }
@@ -215,6 +217,57 @@ impl Config {
             return Err("configuration exceeds 16 KiB".into());
         }
         Ok(serde_json::from_slice(&bytes)?)
+    }
+}
+
+fn require_no_pending_archive_verification(config: &Config) -> io::Result<()> {
+    match std::fs::symlink_metadata(
+        config
+            .data_dir
+            .join("evidence-protection-activation.pending"),
+    ) {
+        Ok(_) if !config.protect_raw_evidence || !config.recoverable_raw_evidence => {
+            return Err(io::Error::other(
+                "evidence protection activation is pending; resume the guarded activation before collection",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    match std::fs::symlink_metadata(config.data_dir.join("evidence-key.recovery.pending")) {
+        Ok(_) => {
+            return Err(io::Error::other(
+                "evidence key recovery is pending; complete its guarded transaction before normal operation",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    match std::fs::symlink_metadata(config.data_dir.join("archive-verification.pending")) {
+        Ok(_) => Err(io::Error::other(
+            "archive verification is pending; normal collection and offline rewrites are blocked until the updater resolves its guarded transaction",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn storage_config(config: &Config) -> StorageConfig {
+    StorageConfig {
+        max_disk_bytes: config.max_disk_mib * 1024 * 1024,
+        retention_months: config.retention_months,
+        protect_new_evidence: config.protect_raw_evidence,
+        // Keep the reader available even when new-evidence protection is disabled:
+        // archives may contain protected records from an earlier configuration.
+        evidence_protection: Some(if config.recoverable_raw_evidence {
+            std::sync::Arc::new(evidence_protection::RecoverableEvidenceProtection::load(
+                &config.data_dir,
+            )) as std::sync::Arc<dyn piko_event_storage::EvidenceProtection>
+        } else {
+            std::sync::Arc::new(evidence_protection::WindowsEvidenceProtection)
+        }),
+        ..StorageConfig::default()
     }
 }
 
@@ -528,6 +581,7 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
             "SCM mode requires absolute data_dir, viewer_sid and no run-for duration".into(),
         );
     }
+    require_no_pending_archive_verification(&config)?;
     let identity = current_identity()?;
     // Keep ownership of the endpoint name through shutdown and durable flush.
     let viewer = if service.is_some() {
@@ -538,11 +592,7 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
     let mut listener = create_listener(&identity, viewer.as_deref(), true)?;
     let (storage, host_id, stored_events, checkpoints) = StorageClient::start_with_maintenance(
         config.data_dir.join("events.db"),
-        StorageConfig {
-            max_disk_bytes: config.max_disk_mib * 1024 * 1024,
-            retention_months: config.retention_months,
-            ..StorageConfig::default()
-        },
+        storage_config(&config),
         config.archive_maintenance,
     )
     .await
@@ -629,6 +679,13 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
         "info",
         "runtime_started; detection=event_log_rules; enforcement=confirmed_file_quarantine",
     );
+    let keys = key_worker::KeyClient::start(
+        config.data_dir.clone(),
+        host_id,
+        config.protect_raw_evidence,
+        config.recoverable_raw_evidence,
+        state.service_mode,
+    )?;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(config.heartbeat_seconds));
     let mut flush = tokio::time::interval(Duration::from_secs(config.flush_seconds));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -727,8 +784,9 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
                 let health = health_receiver.clone();
                 let service_mode = state.service_mode;
                 let response = response.clone();
+                let keys = keys.clone();
                 let observations = observations.latest.clone();
-                clients.spawn(async move { serve(connection, identity, storage, response, health, observations, service_mode).await });
+                clients.spawn(async move { serve(connection, identity, storage, response, keys, health, observations, service_mode).await });
             }
         }
         health_sender.send_replace(state.health());
@@ -820,11 +878,13 @@ async fn flush_all(state: &mut State) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve(
     mut pipe: NamedPipeServer,
     identity: LocalIdentity,
     storage: StorageClient,
     response: response_worker::ResponseClient,
+    keys: key_worker::KeyClient,
     health: watch::Receiver<HealthSnapshot>,
     observations: watch::Receiver<Option<piko_common_model::ObservationSnapshot>>,
     service_mode: bool,
@@ -854,7 +914,9 @@ async fn serve(
     let deadline = Instant::now()
         + if matches!(&request.command, Command::VerifyStore) {
             Duration::from_secs(30)
-        } else if request.command.is_response_command() {
+        } else if request.command.is_response_command()
+            || request.command.is_key_command()
+        {
             Duration::from_millis(2200)
         } else {
             REQUEST_DEADLINE
@@ -884,6 +946,10 @@ async fn serve(
                 Command::GetArchiveMaintenance => {
                     Ok(ApiData::ArchiveMaintenance(storage.maintenance_status()))
                 }
+                Command::GetEvidenceKeyStatus => {
+                    keys.call(Command::GetEvidenceKeyStatus, deadline).await
+                }
+                command if command.is_key_command() => keys.call(command, deadline).await,
                 command if command.is_response_command() => {
                     response.call(command, deadline, actor).await
                 }
@@ -895,8 +961,7 @@ async fn serve(
             request_id: request.request_id,
             result,
         };
-        let bytes = serde_json::to_vec(&response).map_err(io::Error::other)?;
-        if bytes.len() > MAX_RESPONSE_BYTES {
+        if piko_ipc::serialized_length(&response)? > MAX_RESPONSE_BYTES {
             response.result = Err(api_error(
                 "query_result_too_large",
                 "response exceeds 4 MiB; narrow filters or reduce limit",
@@ -1113,3 +1178,6 @@ mod tests {
         assert!(Config::from_reader(io::repeat(b' ')).is_err());
     }
 }
+
+#[cfg(test)]
+mod key_guards_tests;

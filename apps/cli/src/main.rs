@@ -70,6 +70,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         ApiData::ResponseStatus(value) => serde_json::to_string_pretty(&value)?,
         ApiData::Health(value) => serde_json::to_string_pretty(&value)?,
         ApiData::ArchiveMaintenance(value) => serde_json::to_string_pretty(&value)?,
+        ApiData::EvidenceKeyStatus(value) => serde_json::to_string_pretty(&value)?,
+        ApiData::KeyBackupTicket(_)
+        | ApiData::KeyBackup(_)
+        | ApiData::EvidenceProtectionTicket(_) => {
+            return Err("evidence-key mutations are restricted to the guided desktop flow".into())
+        }
         ApiData::Observations(value) => serde_json::to_string_pretty(&value)?,
         ApiData::Investigation(value) => serde_json::to_string_pretty(&value)?,
         ApiData::Events(value) => serde_json::to_string_pretty(&value)?,
