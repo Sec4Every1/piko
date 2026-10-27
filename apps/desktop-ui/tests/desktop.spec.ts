@@ -54,13 +54,15 @@ const alerts: Alert[] = [
   observed_at: observedAt, event_time: observedAt - 3600000, title: 'Backend rule title', explanation: 'Backend rule explanation',
   assessment: assessments[item.rule_id] }));
 
-type TestBridge = { failAlerts: boolean; failEvidence: boolean; failReference: boolean; alerts: Alert[]; calls: { command: string; args?: Record<string, unknown> }[] };
+type TestBridge = { failAlerts: boolean; failEvidence: boolean; failReference: boolean; alerts: Alert[]; calls: { command: string; args?: Record<string, unknown> }[]; evidenceKeyStatus: Record<string, unknown> };
 declare global { interface Window { __PIKO_TEST__: TestBridge } }
 
 async function installBridge(page: Page, mode: 'populated' | 'empty' | 'error' = 'populated') {
   await page.addInitScript(({ health, events, alerts, failAlerts }) => {
     const reviews: Record<string,unknown> = {};
-    const state: TestBridge = { failAlerts, failEvidence: false, failReference: false, alerts, calls: [] };
+    const state: TestBridge = { failAlerts, failEvidence: false, failReference: false, alerts, calls: [], evidenceKeyStatus: {
+      state: 'not_prepared', backup_confirmed: false, new_raw_enabled: false, recoverable_mode: false, activation_pending: false,
+    } };
     window.__PIKO_TEST__ = state;
     Object.defineProperty(window, 'isTauri', { value: true });
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {
@@ -84,6 +86,23 @@ async function installBridge(page: Page, mode: 'populated' | 'empty' | 'error' =
           return state.alerts;
         }
         if (command === 'response_status') return { roots: ['C:\\Users\\Test\\Downloads'], max_file_bytes: 16711680, vault_budget_bytes: 134217728, actions: [] };
+        if (command === 'evidence_key_status') {
+          if (state.calls.some(call => call.command === 'authorize_evidence_protection')) {
+            state.evidenceKeyStatus = { state: 'ready', backup_confirmed: true, new_raw_enabled: true, recoverable_mode: true, activation_pending: false };
+          }
+          return state.evidenceKeyStatus;
+        }
+        if (command === 'begin_evidence_key_backup') return { id: '11111111-1111-4111-8111-111111111111', expires_at_unix_ms: Date.now() + 120000 };
+        if (command === 'authorize_evidence_key_backup') return null;
+        if (command === 'read_evidence_key_backup') return { ticket_id: args?.ticketId, archive_id: '33333333-3333-4333-8333-333333333333', recipient: 'age1testrecipient', recovery_code: 'AGE-SECRET-KEY-1TESTCODE' };
+        if (command === 'confirm_evidence_key_backup') {
+          if (args?.code !== 'AGE-SECRET-KEY-1TESTCODE') throw new Error('Recovery code mismatch');
+          state.evidenceKeyStatus = { state: 'ready', backup_confirmed: true, new_raw_enabled: false, recoverable_mode: false, activation_pending: false };
+          return state.evidenceKeyStatus;
+        }
+        if (command === 'cancel_evidence_key_backup') return null;
+        if (command === 'begin_evidence_protection') return { id: '22222222-2222-4222-8222-222222222222', expires_at_unix_ms: Date.now() + 120000 };
+        if (command === 'authorize_evidence_protection') return null;
         if (command === 'list_events') {
           const filter = (args?.filter ?? {}) as { search?: string; severity?: string; event_type?: string };
           return events.filter(event => (!filter.search || JSON.stringify(event).includes(filter.search))
@@ -512,4 +531,50 @@ test('unavailable archive maintenance stays unknown and allows another refresh',
   await expect(refresh).toBeEnabled();
   await maintenance.getByText('Dettagli manutenzione', { exact: true }).click();
   await expect(maintenance.locator('pre')).toContainText('Synthetic maintenance unavailable');
+});
+
+test('recoverable evidence setup requires an externally saved and re-entered backup before separate activation', async ({ page }) => {
+  await installBridge(page);
+  await page.goto('/');
+  await nav(page, 'Impostazioni').click();
+  const panel = page.locator('.archive-panel');
+  await expect(panel.getByText('Chiave da preparare', { exact: true })).toBeVisible();
+  await panel.getByText('Dettagli e backup della chiave', { exact: true }).click();
+  await panel.getByRole('button', { name: 'Prepara backup', exact: true }).click();
+  await panel.getByLabel('Ho compreso e autorizzo la visualizzazione del codice segreto.').check();
+  await panel.getByRole('button', { name: 'Autorizza e mostra il codice', exact: true }).click();
+  const secret = panel.locator('pre.secret');
+  await expect(secret).toHaveText('AGE-SECRET-KEY-1TESTCODE');
+  const download = page.waitForEvent('download');
+  await panel.getByRole('button', { name: 'Scarica il backup .txt', exact: true }).click();
+  expect((await download).suggestedFilename()).toBe('piko-evidence-recovery.txt');
+  const confirmBackup = panel.getByRole('button', { name: 'Conferma il backup', exact: true });
+  await expect(confirmBackup).toBeDisabled();
+  await panel.getByLabel('Reinserisci il codice dalla copia salvata').fill('AGE-SECRET-KEY-1WRONG');
+  await panel.getByLabel('Dichiaro di aver custodito una copia esterna e segreta.').check();
+  await confirmBackup.click();
+  await expect(panel.getByText(/Operazione non riuscita o autorizzazione non disponibile/)).toBeVisible();
+  await expect(panel.getByText('Chiave da preparare', { exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Prepara backup', exact: true }).click();
+  await panel.getByLabel('Ho compreso e autorizzo la visualizzazione del codice segreto.').check();
+  await panel.getByRole('button', { name: 'Autorizza e mostra il codice', exact: true }).click();
+  await expect(panel.locator('pre.secret')).toHaveText('AGE-SECRET-KEY-1TESTCODE');
+  const retryDownload = page.waitForEvent('download');
+  await panel.getByRole('button', { name: 'Scarica il backup .txt', exact: true }).click();
+  expect((await retryDownload).suggestedFilename()).toBe('piko-evidence-recovery.txt');
+  await panel.getByLabel('Dichiaro di aver custodito una copia esterna e segreta.').check();
+  await panel.getByLabel('Reinserisci il codice dalla copia salvata').fill('AGE-SECRET-KEY-1TESTCODE');
+  await expect(confirmBackup).toBeEnabled();
+  await confirmBackup.click();
+  await expect(panel.getByText('Chiave pronta', { exact: true })).toBeVisible();
+  await expect(panel.locator('p[role="status"]:has-text("Backup confermato tramite il codice reinserito.")')).toBeVisible();
+  const activate = panel.getByRole('button', { name: 'Autorizza e attiva', exact: true });
+  await expect(activate).toBeDisabled();
+  await panel.getByLabel('Confermo di voler attivare la protezione recuperabile delle nuove evidenze.').check();
+  await activate.click();
+  await expect(panel.locator('p[role="status"]').filter({ hasText: 'Protezione recuperabile delle nuove evidenze confermata dal monitor.' })).toBeVisible();
+  expect(await page.evaluate(() => window.__PIKO_TEST__.calls.map(call => call.command))).toEqual(expect.arrayContaining([
+    'evidence_key_status', 'begin_evidence_key_backup', 'authorize_evidence_key_backup', 'read_evidence_key_backup',
+    'confirm_evidence_key_backup', 'begin_evidence_protection', 'authorize_evidence_protection',
+  ]));
 });

@@ -7,6 +7,12 @@ use piko_event_storage::{EventQuery, IntegrityReport};
 use piko_ipc::{ApiData, Command};
 use tauri::Manager;
 mod advisories;
+mod evidence_keys;
+use evidence_keys::{
+    authorize_evidence_key_backup, authorize_evidence_protection, begin_evidence_key_backup,
+    begin_evidence_protection, cancel_evidence_key_backup, confirm_evidence_key_backup,
+    evidence_key_status, read_evidence_key_backup, resume_evidence_protection,
+};
 mod registry_history;
 use registry_history::{registry_history, RegistryController};
 mod process_response;
@@ -159,6 +165,15 @@ fn main() -> std::process::ExitCode {
         .manage(SandboxController::default())
         .invoke_handler(tauri::generate_handler![
             advisory_status,
+            evidence_key_status,
+            begin_evidence_key_backup,
+            authorize_evidence_key_backup,
+            read_evidence_key_backup,
+            confirm_evidence_key_backup,
+            cancel_evidence_key_backup,
+            begin_evidence_protection,
+            authorize_evidence_protection,
+            resume_evidence_protection,
             import_advisory_feed,
             bind_advisory_product,
             unbind_advisory_product,

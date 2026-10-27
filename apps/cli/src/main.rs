@@ -35,6 +35,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             expected_sha256: args[2].clone(),
         },
         Some("health") if args.len() == 1 => Command::GetHealth,
+        Some("maintenance") if args.len() == 1 => Command::GetArchiveMaintenance,
+        Some("evidence-key-status") if args.len() == 1 => Command::GetEvidenceKeyStatus,
         Some("observations") if args.len() == 1 => Command::GetObservations,
         Some("investigate") if args.len() == 2 => Command::GetInvestigation {
             process_instance: args[1].parse()?,
@@ -59,6 +61,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         None | Some("--help") | Some("help") => {
             println!("piko — local security\n\n  piko health\n  piko signature <absolute-exe-path>\n  piko observations\n  piko identity\n  piko events [search]\n  piko query <expression>\n  piko investigate <process-instance-UUID>\n  piko evidence <UUID>\n  piko verify\n  piko alerts\n  piko actions\n  piko quarantine-plan <absolute-file-path>\n  piko restore-plan <quarantine-UUID>\n  piko confirm <plan-UUID> <preview-SHA256>\n\nPlans expire after 5 minutes. Confirmation executes the precise previewed action.\nService mutations require an elevated administrator and configured response_roots.");
+            println!(
+                "  piko maintenance    Last automatic archive-maintenance outcome (read-only)"
+            );
+            println!("  piko evidence-key-status    Recovery-key and activation status (read-only; no secrets)");
             return Ok(());
         }
         _ => return Err("invalid arguments; use piko --help".into()),

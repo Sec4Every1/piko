@@ -38,7 +38,7 @@ export interface EventFilter {
   limit: number; search?: string; severity?: Severity; event_type?: string; since_unix_ms?: number; expression?: string;
 }
 export interface IntegrityReport { verified_events: number; head_hash: string | null; externally_anchored: false; expired_events?: number }
-export type ApiErrorCode = 'browser' | 'unavailable' | 'invalid_response';
+export type ApiErrorCode = 'browser' | 'unavailable' | 'invalid_response' | 'invalid_request';
 export class ApiError extends Error {
   constructor(public readonly code: ApiErrorCode, detail: string) { super(detail); }
 }
