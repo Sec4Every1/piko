@@ -1,7 +1,19 @@
-param([ValidateSet('debug','release')][string]$Profile = 'release')
+param(
+    [ValidateSet('debug','release')][string]$Profile = 'release',
+    [string]$Destination = ''
+)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-$destination = Join-Path $workspace "artifacts\piko-0.2.0-windows-x64-$Profile"
+if ([string]::IsNullOrWhiteSpace($Destination)) {
+    $destination = Join-Path $workspace "artifacts\piko-0.2.0-windows-x64-$Profile"
+} else {
+    $previewRoot = [IO.Path]::GetFullPath((Join-Path $workspace '.build\package-previews')).TrimEnd([char]92) + [IO.Path]::DirectorySeparatorChar
+    $destination = [IO.Path]::GetFullPath($Destination)
+    if (!$destination.StartsWith($previewRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Explicit package destinations must stay under .build/package-previews.'
+    }
+    if (Test-Path -LiteralPath $destination) { throw 'Explicit package destination already exists; choose a fresh path.' }
+}
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 $binaries = @(
     @{source="target\$Profile\piko-service.exe"; name='piko-service.exe'},
@@ -22,10 +34,11 @@ $hashes = foreach ($binary in $binaries) {
 }
 $manifest = @{product='piko'; version='0.2.0'; architecture='x64'; profile=$Profile; signed=$false; files=@($hashes)} | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $destination 'manifest.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
-foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Recover-Piko.cmd','Update-Piko.ps1','Backup-PikoInstallation.ps1','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
+foreach ($script in @('Install-Piko.ps1','Install-Piko-Interactive.ps1','Install-Piko.cmd','Recover-Piko.cmd','Update-Piko.ps1','Resume-PikoUpdate.ps1','Resume-PikoUpdate.cmd','Restore-PikoEvidenceKey.ps1','Restore-PikoEvidenceKey.cmd','Resume-PikoEvidenceProtection.cmd','Backup-PikoInstallation.ps1','Uninstall-Piko.ps1','Set-PikoEtwPermission.ps1','Compress-PikoArchive.ps1','Remove-PikoNoise.ps1','Set-PikoRetention.ps1','Test-PikoService.ps1','Start-Piko.ps1','Open-Piko.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination (Join-Path $destination $script) -Force }
 Copy-Item -LiteralPath (Join-Path $workspace 'LICENSE') -Destination (Join-Path $destination 'LICENSE') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination (Join-Path $destination 'README.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\INSTALLATION.md') -Destination (Join-Path $destination 'LEGGIMI.md') -Force
+Copy-Item -LiteralPath (Join-Path $workspace 'docs\FIRST_RELEASE.md') -Destination (Join-Path $destination 'FIRST_RELEASE.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\RESPONSE.md') -Destination (Join-Path $destination 'RESPONSE.md') -Force
 Copy-Item -LiteralPath (Join-Path $workspace 'docs\MANUALE_UTENTE.md') -Destination (Join-Path $destination 'MANUALE_UTENTE.md') -Force
 [IO.File]::WriteAllText((Join-Path $destination 'INSTALL-COMMAND.txt'), "Fare doppio clic su Install-Piko.cmd in questa cartella e confermare la richiesta Windows.`r`nL'installer rileva automaticamente l'utente sul PC di destinazione.`r`n", (New-Object Text.UTF8Encoding($false)))

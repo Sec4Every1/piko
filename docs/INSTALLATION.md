@@ -4,6 +4,13 @@ Il pacchetto contiene servizio, CLI e interfaccia desktop. È una build locale
 non firmata: analizza registri Windows, conserva evidenze e offre quarantena
 manuale e recovery del contenuto. Offre anche controlli di rete confermati, arresto di singole istanze e prove AppContainer; non è un antivirus completo. Le azioni file richiedono anteprima e conferma.
 
+Perimetro della prima consegna: [FIRST_RELEASE.md](FIRST_RELEASE.md). I nuovi
+sorgenti restano non verificati: non descrivono una nuova installazione già pronta.
+Nuove installazioni e profili locali partono con 2 GiB e conservazione di 12 mesi;
+gli aggiornamenti mantengono la configurazione esistente. Il limite non garantisce
+che qualsiasi volume di eventi possa contenere 12 mesi: a spazio esaurito le
+scritture si fermano. Le copie manuali di manutenzione richiedono spazio aggiuntivo.
+
 Prerequisiti: Windows x64 e WebView2 per la UI. Non disabilitare Defender,
 Secure Boot o i controlli di sicurezza di Windows.
 
@@ -20,6 +27,10 @@ Per provare piko senza installare il servizio, fare doppio clic su
 **Open-Piko.cmd**. Avvia monitor e UI; i dati sono in `%LocalAppData%\piko-monitor`.
 Il monitor continua quando si chiude la UI e termina al logout: non configura
 avvio automatico né protezione preventiva.
+
+Se il servizio è già installato, **Open-Piko.cmd** apre invece la sua dashboard,
+anche quando il servizio è fermo. La disconnessione resta visibile e il recupero
+guidato rimane accessibile; non viene creato un secondo archivio locale.
 
 La **Dashboard** spiega le segnalazioni e i riferimenti MITRE ATT&CK. La pagina
 **Quarantena e ripristino** contiene preparazione e conferma delle azioni sui file,
@@ -84,7 +95,7 @@ Microsoft documenta il requisito per [StartTraceW](https://learn.microsoft.com/e
 
 ## Ripresa dopo installazione parziale
 
-L’installer supporta -ResumeIncomplete solo quando il servizio e l’archivio di sistema non esistono e la cartella programma contiene esattamente i quattro eseguibili e il manifest identici al pacchetto. Non cancella cartelle né dati. Invocazione sc.exe con argv Windows esplicito per preservare le virgolette dei percorsi in PowerShell 5.1. MaxDiskMiB default 512, validato 8–4096.
+L’installer supporta -ResumeIncomplete solo quando il servizio e l’archivio di sistema non esistono e la cartella programma contiene esattamente i quattro eseguibili e il manifest identici al pacchetto. Non cancella cartelle né dati. Invocazione sc.exe con argv Windows esplicito per preservare le virgolette dei percorsi in PowerShell 5.1. MaxDiskMiB default 2048, validato 8–4096; RetentionMonths default 12 (0 disattiva la retention soltanto se richiesto esplicitamente).
 
 
 ## Permesso specifico del provider ETW

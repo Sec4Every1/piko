@@ -2,6 +2,10 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $scriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Update-Piko.ps1'
+$serviceProbe = Join-Path (Split-Path -Parent $PSScriptRoot) '..\target\release\piko-service.exe'
+if (!(Test-Path -LiteralPath $serviceProbe -PathType Leaf)) {
+    throw 'Build target/release/piko-service.exe before running updater fixtures.'
+}
 $fixtureName = 'piko-upgrade-test-' + [guid]::NewGuid().ToString('N')
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $fixture = Join-Path $tempRoot $fixtureName
@@ -25,6 +29,18 @@ if (!$testAcl.PSObject.Properties['Sddl']) {
 
 function New-Object {
     param([string]$TypeName, [object[]]$ArgumentList)
+    if ($TypeName -eq 'Security.Principal.NTAccount') {
+        if (@($ArgumentList).Count -ne 1 -or $ArgumentList[0] -cne 'NT SERVICE\piko') {
+            throw 'Unexpected account lookup in isolated updater fixtures.'
+        }
+        $accountDouble = [pscustomobject]@{}
+        $accountDouble | Add-Member -MemberType ScriptMethod -Name Translate -Value {
+            param($targetType)
+            if ($targetType -ne [Security.Principal.SecurityIdentifier]) { throw 'Unexpected SID conversion.' }
+            Microsoft.PowerShell.Utility\New-Object Security.Principal.SecurityIdentifier('S-1-5-80-11-22-33-44-55')
+        }
+        return $accountDouble
+    }
     if ($TypeName -eq 'Security.Principal.WindowsPrincipal') {
         $principalDouble = [pscustomobject]@{}
         $principalDouble | Add-Member -MemberType ScriptMethod -Name IsInRole -Value { param($role) return $true }
@@ -43,7 +59,7 @@ function Set-Acl {
 function Get-CimInstance {
     param([string]$ClassName, [string]$Filter)
     if ($ClassName -eq 'Win32_Service') {
-        return [pscustomobject]@{PathName=('"' + (Join-Path $program 'piko-service.exe') + '" --service --config "' + (Join-Path $program 'service.json') + '"'); StartName='NT SERVICE\piko'; StartMode='Auto'}
+        return [pscustomobject]@{PathName=('"' + (Join-Path $program 'piko-service.exe') + '" --service --config "' + (Join-Path $program 'service.json') + '"'); StartName='NT SERVICE\piko'; StartMode='Auto'; State=$pikoUpgradeTestState.Status; ExitCode=0; ServiceSpecificExitCode=0}
     }
     if ($ClassName -eq 'Win32_Process') {
         if ($pikoUpgradeTestState.ActiveClient) { return [pscustomobject]@{ExecutablePath=(Join-Path $program 'piko-desktop.exe')} }
@@ -60,9 +76,20 @@ function Get-Service {
         $pikoUpgradeTestState.Mutations++; $pikoUpgradeTestState.Status='Stopped'; $this.Status='Stopped'
     }
     $controller | Add-Member -MemberType ScriptMethod -Name Start -Value {
+        param([string[]]$Arguments)
         $pikoUpgradeTestState.Mutations++
-        if ($pikoUpgradeTestState.FailStart) { $pikoUpgradeTestState.FailStart=$false; throw 'Injected new-service start failure' }
-        $pikoUpgradeTestState.Status='Running'; $this.Status='Running'
+        if ($Arguments -and $Arguments.Length -ge 2 -and $Arguments[0] -ceq '--verify-archive') {
+            $pikoUpgradeTestState.VerifyCalls++
+            $result = if ($pikoUpgradeTestState.FailVerify) { 'FAIL' } else { 'PASS' }
+            $report = [ordered]@{protocol=1;nonce=$Arguments[1];result=$result;read_only=$true;scope='service_identity_archive_verification';integrity=$(if ($result -eq 'PASS') {@{verified_events=1;head_hash=('a' * 64);expired_events=0;externally_anchored=$false}} else {$null});error_code=$(if ($result -eq 'FAIL') {'archive_verification_failed'} else {$null})} | ConvertTo-Json -Depth 5 -Compress
+            [IO.File]::WriteAllText((Join-Path $data ('archive-verification-' + $Arguments[1] + '.json')), $report)
+            $pikoUpgradeTestState.Status='Stopped'; $this.Status='Stopped'
+        } elseif ($pikoUpgradeTestState.FailStart) {
+            $pikoUpgradeTestState.FailStart=$false
+            throw 'Injected new-service start failure'
+        } else {
+            $pikoUpgradeTestState.Status='Running'; $this.Status='Running'
+        }
     }
     $controller | Add-Member -MemberType ScriptMethod -Name WaitForStatus -Value {
         param($state,$timeout)
@@ -80,15 +107,6 @@ function Copy-Item {
     if ($pikoUpgradeTestState.TamperOriginal -and [IO.Path]::GetFileName($Destination) -eq 'piko-service.exe' -and
         [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'previous') {
         [IO.File]::AppendAllText((Join-Path $program 'piko-service.exe'), 'changed after original capture')
-    }
-    if ([IO.Path]::GetFileName($Destination) -eq 'piko-service.exe' -and [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'next') {
-        Set-Item -LiteralPath ('Function:global:' + $Destination) -Value {
-            param($command,$configFlag,$configPath)
-            if ($command -cne '--verify-evidence' -or $configFlag -cne '--config') { throw 'Unexpected offline operation.' }
-            $pikoUpgradeTestState.VerifyCalls++
-            if ($pikoUpgradeTestState.FailVerify) { throw 'Injected archive incompatibility' }
-            @{result='PASS';read_only=$true;verified_events=1;head_hash='fixture'} | ConvertTo-Json
-        }
     }
     if ([IO.Path]::GetFileName($Destination) -eq 'piko.exe' -and [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($Destination)) -eq 'next') {
         Set-Item -LiteralPath ('Function:global:' + $Destination) -Value {
@@ -111,6 +129,9 @@ function Reset-Fixture {
         [IO.File]::WriteAllText((Join-Path $package $name), 'new fixture: ' + $name)
     }
     Write-FixtureManifest $program
+    # The updater executes this candidate for its bounded capability probe.
+    # A text placeholder cannot exercise that real process boundary.
+    [IO.File]::Copy($serviceProbe, (Join-Path $package 'piko-service.exe'), $true)
     Write-FixtureManifest $package
     @{data_dir=$data; viewer_sid='fixture-only'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $program 'service.json')
     [IO.File]::WriteAllText((Join-Path $data 'evidence.txt'), 'retained evidence fixture')
@@ -164,9 +185,11 @@ try {
     $before = @(Get-ChildItem -LiteralPath $program -Force).Count
     $preflight = & $scriptPath -PackagePath $package -PreflightOnly | ConvertFrom-Json
     $null = & $scriptPath -PackagePath $package -WhatIf
-    if ($preflight.result -cne 'preflight_passed' -or $pikoUpgradeTestState.Mutations -ne 0 -or
+    if ($preflight.result -cne 'static_preflight_passed' -or $pikoUpgradeTestState.Mutations -ne 0 -or
         $pikoUpgradeTestState.AclWrites -ne 0 -or $pikoUpgradeTestState.HealthCalls -ne 0 -or
-        @(Get-ChildItem -LiteralPath $program -Force).Count -ne $before) { throw 'Read-only preflight/WhatIf mutated the installation.' }
+        @(Get-ChildItem -LiteralPath $program -Force).Count -ne $before) {
+        throw "Read-only preflight/WhatIf changed fixture state: result=$($preflight.result), mutations=$($pikoUpgradeTestState.Mutations), ACL writes=$($pikoUpgradeTestState.AclWrites), health calls=$($pikoUpgradeTestState.HealthCalls), files=$(@(Get-ChildItem -LiteralPath $program -Force).Count)/$before."
+    }
     Assert-PreservedData
     Write-Output 'PASS preflight and WhatIf make no lifecycle/ACL/file changes'
 
@@ -186,8 +209,15 @@ try {
     $result = & $scriptPath -PackagePath $package -Confirm:$false | ConvertFrom-Json
     if ($result.result -cne 'updated' -or $pikoUpgradeTestState.Status -cne 'Running' -or $pikoUpgradeTestState.HealthCalls -ne 1) { throw 'Update did not restore/qualify the running service.' }
     foreach ($name in $files) {
-        if ([IO.File]::ReadAllText((Join-Path $program $name)) -cne ('new fixture: ' + $name) -or
-            [IO.File]::ReadAllText((Join-Path $result.backup_directory $name)) -cne ('old fixture: ' + $name)) { throw 'New/backup binary identity differs.' }
+        $installedPath = Join-Path $program $name
+        $backupPath = Join-Path $result.backup_directory $name
+        $installedMatchesPackage = if ($name -eq 'piko-service.exe') {
+            (Get-FileHash -LiteralPath $installedPath -Algorithm SHA256).Hash -ceq
+                (Get-FileHash -LiteralPath (Join-Path $package $name) -Algorithm SHA256).Hash
+        } else { [IO.File]::ReadAllText($installedPath) -ceq ('new fixture: ' + $name) }
+        if (!$installedMatchesPackage -or [IO.File]::ReadAllText($backupPath) -cne ('old fixture: ' + $name)) {
+            throw 'New/backup binary identity differs.'
+        }
     }
     Assert-PreservedData
     Write-Output 'PASS same-version different-build refresh retains old binaries and data'
@@ -255,7 +285,7 @@ try {
     $pikoUpgradeTestState.FailVerify=$true
     $message=$null
     try { & $scriptPath -PackagePath $package -RecoverInconsistentInstallation -Confirm:$false } catch { $message=$_.Exception.Message }
-    if ($message -notlike '*Injected archive incompatibility*' -or $pikoUpgradeTestState.Status -cne 'Running' -or
+    if ($message -notlike '*Candidate could not verify the archive under the existing service identity*' -or $pikoUpgradeTestState.Status -cne 'Running' -or
         [IO.File]::ReadAllText((Join-Path $program 'piko-service.exe')) -cne 'old fixture: piko-service.exe inconsistent original' -or $pikoUpgradeTestState.HealthCalls -ne 0) { throw 'Incompatible archive did not prevent replacement.' }
     Assert-PreservedData
     Write-Output 'PASS incompatible archive prevents replacement and restores prior service state'
@@ -304,9 +334,9 @@ try {
     # Test the elevated interactive dispatch without UAC or real installation.
     $pikoUpgradeTestState.Route=''
     Set-Item -LiteralPath ('Function:' + $scriptPath) -Value {
-        param([string]$PackagePath,[switch]$RecoverInconsistentInstallation)
+        param([string]$PackagePath,[switch]$RecoverInconsistentInstallation,[switch]$ResumeInterruptedUpdate)
         if ($args.Count -ne 0) { throw 'Update dispatch unexpectedly changed install options.' }
-        $pikoUpgradeTestState.Route=if($RecoverInconsistentInstallation){'recover'}else{'update'}
+        $pikoUpgradeTestState.Route=if($ResumeInterruptedUpdate){'resume-update'}elseif($RecoverInconsistentInstallation){'recover'}else{'update'}
     }
     $interactive = Join-Path (Split-Path -Parent $PSScriptRoot) 'Install-Piko-Interactive.ps1'
     & $interactive -Elevated -ViewerSid 'S-1-5-18'
@@ -325,6 +355,95 @@ try {
     & $interactive -Elevated -ViewerSid 'S-1-5-18'
     if ($pikoUpgradeTestState.Route -cne 'install') { throw 'Fresh installation did not retain its route.' }
     Write-Output 'PASS interactive fresh-install route retains viewer and ETW options'
+    # Exercise the real dispatcher with its process/script boundaries replaced.
+    # These doubles cannot launch a helper, UAC, or a key-recovery process.
+    Reset-Fixture
+    $global:LASTEXITCODE=0
+    $restoreScript = Join-Path (Split-Path -Parent $PSScriptRoot) 'Restore-PikoEvidenceKey.ps1'
+    Set-Item -LiteralPath ('Function:' + $restoreScript) -Value {
+        if ($args.Count -ne 0) { throw 'Key restore unexpectedly received arguments.' }
+        $pikoUpgradeTestState.Route='restore-key'
+        $global:LASTEXITCODE=0
+    }
+    function Start-Process {
+        param([string]$FilePath,[string]$ArgumentList,[string]$WindowStyle,[switch]$Wait,[switch]$PassThru)
+        $pikoUpgradeTestState.ProcessCalls++
+        if ($args.Count -ne 0 -or
+            $FilePath -cne (Join-Path $env:ProgramFiles 'piko\piko-network-helper.exe') -or
+            $ArgumentList -cne '--resume-evidence-protection' -or
+            $WindowStyle -cne 'Hidden' -or !$Wait -or !$PassThru) {
+            throw 'Unexpected process launch at the interactive recovery boundary.'
+        }
+        $pikoUpgradeTestState.Route='resume-protection'
+        if ($pikoUpgradeTestState.ThrowHelper) { throw 'Injected helper launch failure' }
+        return [pscustomobject]@{ExitCode=$pikoUpgradeTestState.HelperExit}
+    }
+    $pikoUpgradeTestState.ProcessCalls=0
+    $pikoUpgradeTestState.ThrowHelper=$false
+    $pikoUpgradeTestState.HelperExit=0
+    $pikoUpgradeTestState.Route=''
+    & $interactive -Elevated -ViewerSid 'S-1-5-18' -RestoreEvidenceKey
+    if ($pikoUpgradeTestState.Route -cne 'restore-key' -or $pikoUpgradeTestState.ProcessCalls -ne 0) { throw 'Key restoration did not route only to its script boundary.' }
+    Assert-PreservedData
+    Write-Output 'PASS interactive key restore routes only to the recovery script'
+
+    $pikoUpgradeTestState.Route=''
+    & $interactive -Elevated -ViewerSid 'S-1-5-18' -ResumeEvidenceProtection
+    if ($pikoUpgradeTestState.Route -cne 'resume-protection' -or $pikoUpgradeTestState.ProcessCalls -ne 1) { throw 'Activation resume did not launch the exact installed helper.' }
+    Assert-PreservedData
+    Write-Output 'PASS interactive activation resume invokes only the installed helper hidden'
+    foreach ($failure in @('exit','launch')) {
+        $pikoUpgradeTestState.HelperExit=if($failure -ceq 'exit'){1}else{0}
+        $pikoUpgradeTestState.ThrowHelper=$failure -ceq 'launch'
+        $message=$null
+        try { & $interactive -Elevated -ViewerSid 'S-1-5-18' -ResumeEvidenceProtection } catch { $message=$_.Exception.Message }
+        if (!$message -or $pikoUpgradeTestState.Mutations -ne 0 -or $pikoUpgradeTestState.AclWrites -ne 0) { throw 'Helper failure was hidden or changed service/ACL state.' }
+        Assert-PreservedData
+    }
+    $pikoUpgradeTestState.HelperExit=0
+    $pikoUpgradeTestState.ThrowHelper=$false
+    Write-Output 'PASS interactive helper refusal and launch failure preserve installation data/state'
+
+    $pikoUpgradeTestState.ServiceExists=$false
+    foreach ($operation in @('RestoreEvidenceKey','ResumeEvidenceProtection')) {
+        $pikoUpgradeTestState.Route=''
+        $callsBefore=$pikoUpgradeTestState.ProcessCalls
+        $switches=@{}; $switches[$operation]=$true
+        $message=$null
+        try { & $interactive -Elevated -ViewerSid 'S-1-5-18' @switches } catch { $message=$_.Exception.Message }
+        if (!$message -or $pikoUpgradeTestState.Route -cne '' -or $pikoUpgradeTestState.ProcessCalls -ne $callsBefore) { throw 'Missing-service recovery dispatched an operation.' }
+        Assert-PreservedData
+    }
+    Write-Output 'PASS interactive restore and activation resume require an existing service'
+
+    $pikoUpgradeTestState.ServiceExists=$true
+    $operations=@('RecoverInconsistentInstallation','ResumeInterruptedUpdate','RestoreEvidenceKey','ResumeEvidenceProtection')
+    for ($first=0; $first -lt $operations.Count; $first++) {
+        for ($second=$first+1; $second -lt $operations.Count; $second++) {
+            $pikoUpgradeTestState.Route=''
+            $callsBefore=$pikoUpgradeTestState.ProcessCalls
+            $switches=@{}; $switches[$operations[$first]]=$true; $switches[$operations[$second]]=$true
+            $message=$null
+            try { & $interactive -Elevated -ViewerSid 'S-1-5-18' @switches } catch { $message=$_.Exception.Message }
+            if (!$message -or $pikoUpgradeTestState.Route -cne '' -or $pikoUpgradeTestState.ProcessCalls -ne $callsBefore) { throw 'Conflicting recovery modes dispatched an operation.' }
+            Assert-PreservedData
+        }
+    }
+    Write-Output 'PASS all six conflicting recovery mode pairs refuse before dispatch'
+
+    $pikoUpgradeTestState.Route=''
+    & $interactive -Elevated -ViewerSid 'S-1-5-18' -ResumeInterruptedUpdate
+    if ($pikoUpgradeTestState.Route -cne 'resume-update') { throw 'Explicit interrupted-update resume did not route to the updater.' }
+    $pendingRoute = Join-Path $data 'archive-verification.pending'
+    [IO.File]::WriteAllText($pendingRoute,'synthetic route fixture only')
+    try {
+        $pikoUpgradeTestState.Route=''
+        & $interactive -Elevated -ViewerSid 'S-1-5-18'
+        if ($pikoUpgradeTestState.Route -cne 'resume-update' -or !(Test-Path -LiteralPath $pendingRoute)) { throw 'Pending update was not routed for resume or its marker was removed.' }
+        Assert-PreservedData
+    } finally { Remove-Item -LiteralPath $pendingRoute -Force }
+    if ($pikoUpgradeTestState.Mutations -ne 0 -or $pikoUpgradeTestState.AclWrites -ne 0) { throw 'Interactive routing changed the service or ACLs.' }
+    Write-Output 'PASS explicit and pending-marker update resumes route without fresh update/install'
     Write-Output "Upgrade and explicit recovery fixture checks passed on PowerShell $($PSVersionTable.PSVersion); no real installation or SCM state was changed."
 } finally {
     $env:ProgramFiles=$savedProgramFiles

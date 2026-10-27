@@ -6,8 +6,8 @@ param(
     [switch]$EnableEtw,
     [switch]$EnableEtwProviderAccess,
     [switch]$ResumeIncomplete,
-    [ValidateRange(8,4096)][int]$MaxDiskMiB = 512,
-    [ValidateRange(0,120)][int]$RetentionMonths = 0
+    [ValidateRange(8,4096)][int]$MaxDiskMiB = 2048,
+    [ValidateRange(0,120)][int]$RetentionMonths = 12
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -118,6 +118,7 @@ try {
         Add-LocalGroupMember -Group $traceGroup -Member $serviceSid
     }
     Copy-Item -LiteralPath (Join-Path $package 'Set-PikoEtwPermission.ps1') -Destination (Join-Path $program 'Set-PikoEtwPermission.ps1')
+    # Activation procedure is embedded in the manifest-owned network helper.
     if ($EnableEtwProviderAccess) { & (Join-Path $program 'Set-PikoEtwPermission.ps1') }
     Invoke-Sc @('description', 'piko', 'Local Windows telemetry and evidence. No antivirus or preventive enforcement is enabled by this version.')
     & (Join-Path $program 'piko-service.exe') --configure-recovery

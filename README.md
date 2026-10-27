@@ -4,7 +4,10 @@
 are built from this repository by [GitHub Actions](.github/workflows/release-windows.yml)
 when a version tag is pushed.
 
-Piattaforma locale di sicurezza per Windows, costruita attorno a osservabilità, integrità, causalità, memoria, intento e immunità collettiva opzionale.
+Monitor locale di sicurezza per Windows, con evidenze consultabili e azioni manuali
+confermate. La prima consegna ha un [perimetro chiuso](docs/FIRST_RELEASE.md):
+le funzionalità future della piattaforma restano nella matrice dei requisiti.
+I sorgenti in sviluppo non sono una nuova release verificata o installata.
 
 Strategia: **memory-safe by default, platform-native when justified**. L'[audit del repository](docs/COMPONENT_AUDIT.md) conserva i componenti validi; le [decisioni linguistiche](docs/LANGUAGE_DECISIONS.md) non richiedono migrazioni Rust → C attuali. Il [modello Attack Paths](docs/ATTACK_PATH_MODEL.md) distingue grafi osservati, potenziali e controfattuali; questi engine sono pianificati e non ancora presenti nel runtime.
 
@@ -92,7 +95,14 @@ Client da terminale, dalla radice del progetto:
 
 `piko.dev.json` controlla percorso dati, heartbeat, frequenza del batch, capacità della coda e budget disco. Le modifiche richiedono il riavvio del runtime. Il percorso dati relativo è risolto rispetto alla cartella da cui viene avviato il processo.
 
-La configurazione predefinita assegna 256 MiB all'archivio, con margine per WAL/checkpoint. La retention automatica non è implementata: al raggiungimento del budget il runtime segnala il degrado e rifiuta ulteriori scritture, senza cancellare prove. L'archivio di sviluppo è in chiaro e non ha ACL di produzione, chiavi protette o checkpoint firmati. La catena locale rileva alcune alterazioni; non certifica l'assenza di riscrittura completa o troncamento della coda del registro.
+Nuove installazioni e profili creati da Open-Piko.cmd usano 2 GiB e retention
+di 12 mesi. Configurazioni esistenti e `piko.dev.json` mantengono i propri valori
+(il file di sviluppo usa 256 MiB). WAL/checkpoint richiedono margine: a capacità
+esaurita il runtime segnala degrado e rifiuta scritture, senza accorciare la
+retention per liberare spazio. Nessuna garanzia universale di 12 mesi per qualsiasi
+volume di eventi. La protezione recuperabile delle nuove evidenze è opt-in e
+rimane da qualificare; eventi normalizzati e indici restano in chiaro. La catena
+locale non certifica l'assenza di riscrittura completa o troncamento della coda.
 
 L'identità del chiamante deriva da Windows. Qualsiasi processo dello stesso utente/sessione può connettersi al runtime console: questo non prova l'intento umano e non protegge da malware con la stessa identità. Le azioni seguono comunque piano/hash/conferma e scope. Il servizio installato usa una pipe separata: il lettore autorizzato per SID accede dalle proprie sessioni; le mutazioni richiedono il token elevato effettivo del caller. Il client verifica il PID tramite SCM e non effettua fallback se il servizio installato è fermo.
 

@@ -1,6 +1,10 @@
+Perimetro della prima consegna: FIRST_RELEASE.md nel pacchetto e nel repository.
+Nuove installazioni e nuovi profili locali usano 2 GiB e 12 mesi; configurazioni
+esistenti conservate. Open-Piko.cmd apre la dashboard installata anche a monitor
+fermo, senza creare un secondo archivio. Qualifica dell’installazione ancora da completare.
 # piko — Manuale utente
 
-Versione 0.2.0 · Windows x64 · Aggiornato il 14 ottobre 2026
+Versione 0.2.0 · Windows x64 · Aggiornato il 22 ottobre 2026
 
 piko raccoglie alcuni registri di Windows, segnala eventi da controllare e permette
 di mettere in quarantena e ripristinare un file preciso, dopo conferma. La dashboard
@@ -405,6 +409,16 @@ direzione del traffico e il legame padre-figlio non vengono dedotti dai PID.
 
 CLI: piko.exe query '<espressione>' e piko.exe investigate <UUID-istanza>.
 
+Estensione nei sorgenti in sviluppo, ancora da verificare: selezionando un padre
+o un figlio identificato, **Esplora questo processo** carica le sue relazioni.
+**Indietro** torna al livello precedente; **Programma iniziale** riapre la prima
+istanza. La navigazione si ferma a otto livelli e impedisce di ripercorrere una
+stessa istanza. Ogni livello conserva le proprie evidenze storiche: non e una
+prova di una catena di attacco. Se non ci sono osservazioni, la vista lo indica.
+Le porte UDP sono locali e non dimostrano traffico o destinazioni remote.
+Il campo di ricerca `process.parent_instance` cerca il riferimento al padre;
+non ricostruisce una relazione partendo dal solo PID.
+
 ## Selezionare le app e applicare blocchi multipli
 
 Apri **Permessi app**. La griglia mostra 12 app per pagina. Cerca nome, editore o
@@ -632,6 +646,101 @@ In **Impostazioni**, il sensore **windows.etw.process_image** riporta stato, eve
 
 ## Capacità archivio e scritture sospese
 
+### Aggiornamenti e copie dell'archivio: novità in sviluppo
+
+Il nuovo **Resume-PikoUpdate.cmd** riprende un aggiornamento protetto interrotto:
+trova la relativa transazione, conserva i precedenti rapporti di errore e ripete
+la verifica prima di riavviare normalmente. Usa la consueta richiesta Windows;
+non occorre indicare cartelle o identificativi. È codice ancora non verificato
+né incluso in un pacchetto compilato. Non avviarlo su questa installazione come
+parte delle sole attività di sviluppo.
+Il nuovo avvio guidato da **Install-Piko.cmd** riconosce il blocco pendente e
+sceglie lo stesso percorso di ripresa, senza ignorare i controlli di integrità.
+
+La ripresa automatica richiede una transazione creata dal nuovo percorso, il
+servizio protetto già copiato e un archivio invariato. Dati cambiati, copie
+mancanti o un eseguibile scritto solo in parte restano errori espliciti. Nessuna
+copia viene ripristinata sopra eventi nuovi e nessuna chiave viene esportata.
+
+Il nuovo percorso di aggiornamento, ancora non verificato né installato, conserva
+una copia privata dell'archivio e fa controllare alla nuova versione che riesca
+a leggerlo usando lo stesso account Windows del servizio. Solo dopo un esito
+positivo avvia il monitor normalmente. Richiede spazio aggiuntivo per la copia;
+non aumenta il limite dell'archivio e non elimina eventi.
+
+Un controllo preliminare riuscito non significa che i dati siano stati verificati.
+Se il controllo effettivo fallisce, il programma conserva le copie e tenta il
+ripristino dei binari precedenti quando sicuro. Dopo un arresto anomalo può
+rimanere bloccato in una transazione protetta: non eliminare i file di stato o le
+copie per forzare l'avvio. Il ripristino dei dati non è automatico.
+
+La copia dell'archivio non recupera chiavi Windows perse e non rende portabili i
+dati cifrati su un altro computer. Questa parte resta da completare.
+
+Nei nuovi sorgenti, **Chiavi delle evidenze** include una procedura di backup:
+apri i dettagli, prepara il backup, accetta la richiesta amministratore di
+Windows, scarica il codice e custodiscilo su un supporto esterno sicuro. Reinserisci
+il codice dalla copia salvata per confermare. La sessione dura cinque minuti;
+annullamento, scadenza e disconnessione nascondono il codice. Non pubblicarlo e
+non inviarlo nei log: chi lo possiede può leggere i dati del nuovo formato.
+
+Lo stato «Chiave pronta» non significa archivio cifrato né prova che la copia sia
+fisicamente fuori dal PC. I vecchi dati DPAPI non diventano recuperabili. Il
+recupero della chiave locale dopo perdita del profilo è ora collegato nel sorgente;
+la cifratura resta disattivata per impostazione predefinita. Tutto questo è sorgente non verificato, non un
+pacchetto compilato o una modifica dell'installazione corrente.
+
+Dopo il backup confermato, **Autorizza e attiva** permette di richiedere la
+protezione recuperabile delle nuove evidenze grezze. Richiede consenso esplicito
+e autorizzazione Windows; riavvia brevemente il monitor. Il completamento viene
+confermato dal servizio. Eventi normalizzati, indici e dati precedenti non vengono
+cifrati da questa operazione. Dopo nuove scritture protette non ripristinare
+manualmente una configurazione con protezione disattivata.
+
+Se l'attivazione si interrompe e il monitor resta scollegato, apri nell'app desktop
+**Riprendi un’attivazione interrotta**, conferma **Autorizza e riprendi** e autorizza
+Windows. In alternativa usa **Resume-PikoEvidenceProtection.cmd** dal pacchetto aggiornato.
+La procedura conserva le copie e riprende soltanto una transazione riconosciuta.
+Può conservare una copia parziale della configurazione e ricostruirla soltanto
+quando originale, chiave e installazione corrispondono allo stato registrato.
+Se rifiuta dati modificati o uno stato non riconosciuto, non cancellare i file
+di stato. Questo percorso è ancora sorgente non verificato.
+
+Nella cronologia delle osservazioni, **Carica precedenti** mostra altre pagine
+di massimo 128 eventi senza cambiare il periodo selezionato; **Più recenti**
+torna alla prima pagina. Ogni pagina sostituisce anche le relazioni visualizzate.
+La consultazione non congela l'archivio: eventi arrivati tardi e scadenze di
+conservazione possono modificare le pagine successive. Un servizio precedente
+che non supporta le pagine restituisce indisponibilità, senza ignorare il periodo.
+
+Nel pacchetto aggiornato, **Restore-PikoEvidenceKey.cmd** apre il recupero guidato:
+conferma Windows e seleziona il file di backup salvato. Non serve inserire il
+codice in un terminale. La procedura arresta temporaneamente il monitor, verifica
+l'archivio, conserva le chiavi originali e prepara la chiave per il profilo attuale.
+Solo dopo un secondo controllo riavvia il servizio. Supporta il nuovo formato
+recuperabile nella stessa installazione; non importa archivi da altri PC.
+
+Se si interrompe, ripeti la stessa procedura con lo stesso backup. I file
+incompleti o un archivio cambiato vengono conservati e il recupero automatico
+può essere rifiutato: non cancellare i file di stato per forzare l'avvio. Un
+backup errato rifiutato prima di modificare chiavi permette un nuovo tentativo
+con quello corretto. Durante un recupero in sospeso, il codice rimane in un
+file privato del servizio; al completamento viene eliminato logicamente, senza
+garanzia di cancellazione fisica. Flusso ancora da collaudare.
+
+**Novità in sviluppo, non ancora installate o verificate:** nel pannello della
+capacità archivio, **Manutenzione automatica** mostra attesa, esecuzione, ultimo
+lotto completato o pausa per errore. **Aggiorna stato** legge l'ultimo esito;
+non avvia operazioni e non richiede permessi amministrativi. Piko comprime piccole
+porzioni delle evidenze storiche quando la coda è libera, senza eliminare eventi
+o ridurre la conservazione. La riduzione dei dati non equivale a spazio fisico
+liberato: il database può mantenere pagine riutilizzabili. Se è già pieno, anche
+la compressione può fermarsi. I dettagli mostrano l'eventuale errore.
+
+La manutenzione usa l'identità Windows del monitor: non occorre scegliere chiavi
+o account. Questo non costituisce un backup recuperabile delle chiavi; la nuova
+cifratura delle evidenze rimane disattivata per impostazione predefinita.
+
 La raccolta essenziale conserva avvio/arresto dei processi, caricamenti DLL e tutti
 gli eventi Windows Security disponibili. Gli scaricamenti delle DLL sono esclusi;
 l'heartbeat resta una misura live. Le statistiche dei sensori vengono archiviate
@@ -699,6 +808,24 @@ La dashboard raggruppa **Accessi falliti ripetuti** quando piko osserva almeno c
 Controlla password salvate e servizi prima di intervenire. Se non riconosci la fonte, chiedi all’amministratore di verificare accesso remoto e credenziali. Nessun account viene bloccato automaticamente. Score 50/100 indica priorità euristica, non probabilità; T1110 è una mappatura di contesto. Dipende da audit Windows e accesso al log Security. Analizza gli ultimi 256 record 4625 (16 MiB), esclude il minuto più vecchio se tagliato; altri errori o errori tra minuti possono sfuggire. Non segnala automaticamente i login riusciti e non copre tutte le forme di forza bruta.
 
 ## Porte UDP
+
+Nei nuovi sorgenti, **Relazioni osservate → Sequenza delle osservazioni** mostra
+cinque righe per pagina con nome del programma, ora e tipo di attività. Puoi
+cercare un programma, filtrare processi/TCP/UDP e cambiare l'ordine. **Dettagli**
+apre l'evento dell'istanza corretta e permette di leggere l'evidenza originale.
+Il campione contiene fino a128 osservazioni tra500 eventi interrogati: ogni
+taglio è segnalato e i filtri della sequenza riguardano il campione caricato.
+
+**Periodo dello storico** permette di scegliere inizio e fine in orario locale.
+**Carica periodo** interroga l'archivio prima di applicare il limite: la fine è
+esclusa. **Tutto lo storico** torna al campione recente. Il periodo caricato
+rimane visibile e si conserva esplorando padre/figli; se una lettura fallisce,
+la vista precedente conserva il proprio periodo. Una vecchia versione del
+servizio può rifiutare questa richiesta senza fingere di avere applicato il filtro.
+
+Gli orari sono quelli delle osservazioni, non necessariamente delle azioni:
+l'ordine non dimostra una catena di attacco. L'assenza di un evento nel campione
+non ne prova l'assenza dal sistema. Estensione non ancora verificata o installata.
 
 In **Attività applicazioni**, seleziona il programma e apri **Porte locali UDP**. Mostra solo indirizzo e porta locali associabili all’istanza osservata; massimo cinque per pagina. La lettura è ogni 10 secondi e può essere parziale o non disponibile. Non mostra destinazioni, contenuto, DNS o prova di invio/ricezione. Un bind può servire soltanto a inviare. I blocchi rete per exe restano in Permessi app.
 
