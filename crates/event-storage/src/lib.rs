@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 
 mod evidence_codec;
+mod maintenance;
+pub use maintenance::ArchiveMaintenanceStatus;
+mod protected_evidence;
+pub use protected_evidence::{EvidenceProtection, MAX_STORED_EVIDENCE_BYTES};
 mod identity_activity;
 mod noise;
 pub use identity_activity::{AuthenticationPage, AuthenticationQuery, AuthenticationRecord};
@@ -34,6 +38,8 @@ const ZERO_HASH: [u8; 32] = [0; 32];
 
 #[derive(Clone, Debug)]
 pub struct StorageConfig {
+    pub protect_new_evidence: bool,
+    pub evidence_protection: Option<std::sync::Arc<dyn EvidenceProtection>>,
     pub max_disk_bytes: u64,
     pub max_event_bytes: usize,
     pub retention_months: Option<u8>,
@@ -42,6 +48,8 @@ pub struct StorageConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
+            protect_new_evidence: false,
+            evidence_protection: None,
             max_disk_bytes: 256 * 1024 * 1024,
             max_event_bytes: MAX_EVENT_BYTES,
             retention_months: None,
@@ -99,6 +107,9 @@ pub struct SqliteEventStore {
     path: PathBuf,
     host_id: Uuid,
     config: StorageConfig,
+    // Offline copy destinations share the existing quota with their source.
+    // This transient scope is not persisted or exposed as a storage policy.
+    companion_source: Option<PathBuf>,
 }
 
 struct PreparedRecord {
@@ -149,7 +160,7 @@ impl SqliteEventStore {
     pub fn expired_events(&self) -> Result<u64, StorageError> {
         Ok(self.checkpoint()?.map_or(0, |c| c.position as u64))
     }
-    /// Offline maintenance, at most 32 rows and 4 MiB original input per commit.
+    /// Maintenance: at most 32 rows and 4 MiB plaintext input per commit.
     /// Cursor is caller-owned: interrupted runs can safely restart from zero.
     pub fn compress_existing_evidence(
         &mut self,
@@ -158,16 +169,10 @@ impl SqliteEventStore {
         if after < 0 {
             return Err(StorageError::Configuration);
         }
-        // A smaller replacement can still allocate WAL pages. Reserve pending
-        // main-file checkpoint growth before acquiring the maintenance transaction.
-        let maintenance_base = self
-            .disk_bytes()?
-            .saturating_add(self.pending_checkpoint_growth()?);
-        let maintenance_budget = self.config.max_disk_bytes;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut query = transaction.prepare("SELECT rowid, CASE WHEN length(payload)<=4194304 THEN payload ELSE NULL END,digest FROM raw_evidence WHERE rowid>?1 ORDER BY rowid LIMIT 32")?;
+        let evidence_config = self.config.clone();
+        // Stage a bounded read first. A live read/write transaction would pin
+        // the WAL and prevent admission from reclaiming a completed checkpoint.
+        let mut query = self.connection.prepare("SELECT rowid, CASE WHEN length(payload)<=4259852 THEN payload ELSE NULL END,digest FROM raw_evidence WHERE rowid>?1 ORDER BY rowid LIMIT 32")?;
         let mut rows = query.query([after])?;
         let (mut cursor, mut scanned, mut saved, mut original_bytes) = (after, 0u64, 0u64, 0usize);
         let mut updates = Vec::new();
@@ -177,45 +182,75 @@ impl SqliteEventStore {
             let payload =
                 payload.ok_or_else(|| StorageError::Corrupt("oversized evidence row".into()))?;
             // Already compressed records were verified by open(); skip without rewriting.
-            if payload.starts_with(b"PIKOEV\x01") {
+            if payload.starts_with(b"PIKOEV\x01") || protected_evidence::is_protected(&payload) {
                 cursor = id;
                 scanned += 1;
                 continue;
             }
             if original_bytes + payload.len() > MAX_BATCH_BYTES {
+                if scanned == 0 {
+                    return Err(StorageError::InvalidRawEvidence);
+                }
                 break;
             }
-            let logical = evidence_codec::decode(&payload)?;
+            let logical = evidence_codec::decode_stored(&payload, &evidence_config)?;
             let digest: Vec<u8> = row.get(2)?;
             if Sha256::digest(&logical).as_slice() != digest.as_slice() {
                 return Err(StorageError::Corrupt("raw evidence digest mismatch".into()));
             }
+            // Existing plaintext maintenance is compression, not an implicit
+            // encryption migration. Protected rows were skipped above.
             let encoded = evidence_codec::encode(&logical)?;
             original_bytes += logical.len();
             cursor = id;
             scanned += 1;
             if encoded.len() < payload.len() {
                 saved += (payload.len() - encoded.len()) as u64;
-                updates.push((id, encoded));
+                updates.push((id, payload, digest, encoded));
             }
         }
         drop(rows);
         drop(query);
         let changed = updates.len() as u64;
+        let estimated_growth = (original_bytes as u64)
+            .saturating_mul(4)
+            .saturating_add(changed * 16_384)
+            .saturating_add(65_536);
         if changed != 0 {
-            let estimated_growth = (original_bytes as u64)
-                .saturating_mul(4)
-                .saturating_add(changed * 16_384)
-                .saturating_add(65_536);
-            if maintenance_base.saturating_add(estimated_growth) > maintenance_budget {
-                return Err(StorageError::DiskBudgetExceeded);
-            }
+            // This includes pending main-file growth and retries only a bounded,
+            // nonblocking checkpoint. Never count logical savings as free space.
+            self.ensure_append_budget(estimated_growth)?;
         }
-        for (id, payload) in updates {
-            transaction.execute(
-                "UPDATE raw_evidence SET payload=?1 WHERE rowid=?2",
-                params![payload, id],
+        if changed == 0 {
+            return Ok((cursor, scanned, changed, saved));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Re-sample under the writer lock: another connection may have committed
+        // between staging/admission and BEGIN IMMEDIATE. No checkpoint is tried
+        // here, and no compression write has happened yet.
+        Self::check_writer_budget(
+            &transaction,
+            &self.path,
+            self.config.max_disk_bytes,
+            estimated_growth,
+            self.companion_source.as_deref(),
+        )?;
+        for (id, original, digest, payload) in updates {
+            // Admission runs without a reader. Refuse a changed/deleted/reused
+            // row rather than overwriting evidence from the staging interval.
+            // Any mismatch rolls back the whole pass and leaves its cursor with
+            // the caller, which receives an error rather than partial success.
+            let affected = transaction.execute(
+                "UPDATE raw_evidence SET payload=?1 WHERE rowid=?2 AND payload=?3 AND digest=?4",
+                params![payload, id, original, digest],
             )?;
+            if affected != 1 {
+                return Err(StorageError::Corrupt(
+                    "evidence changed during compression admission".into(),
+                ));
+            }
         }
         transaction.commit()?;
         Ok((cursor, scanned, changed, saved))
@@ -292,12 +327,38 @@ impl SqliteEventStore {
             path,
             host_id,
             config,
+            companion_source: None,
         };
         store.check_budget(0)?;
+        store.validate_evidence_protection(false)?;
         Ok(store)
     }
 
     pub fn open(path: impl AsRef<Path>, config: StorageConfig) -> Result<Self, StorageError> {
+        Self::open_scoped(path, config, None)
+    }
+
+    fn open_scoped(
+        path: impl AsRef<Path>,
+        config: StorageConfig,
+        companion_source: Option<PathBuf>,
+    ) -> Result<Self, StorageError> {
+        if config.protect_new_evidence {
+            config
+                .evidence_protection
+                .as_ref()
+                .ok_or_else(|| {
+                    StorageError::ProtectionPolicy(
+                        "raw evidence protection provider is unavailable".into(),
+                    )
+                })?
+                .validate_new_writes()
+                .map_err(|_| {
+                    StorageError::ProtectionPolicy(
+                        "evidence protection prerequisites are not ready".into(),
+                    )
+                })?;
+        }
         if config.max_disk_bytes < 8 * 1024 * 1024
             || config.max_disk_bytes > i64::MAX as u64
             || config
@@ -311,6 +372,19 @@ impl SqliteEventStore {
         let path = path.as_ref().to_path_buf();
         if path.as_os_str().is_empty() || path == Path::new(":memory:") {
             return Err(StorageError::Configuration);
+        }
+        if let Some(source) = companion_source.as_deref() {
+            // Only fresh offline destinations may use this scope. Keep the
+            // ordinary half-budget bootstrap reserve; do not give the copy a
+            // second quota or assume the original will be removed afterwards.
+            if path.exists() || source == path {
+                return Err(StorageError::Configuration);
+            }
+            let occupied =
+                Self::files_bytes(&path)?.saturating_add(Self::companion_bytes(Some(source))?);
+            if occupied.saturating_add(config.max_disk_bytes / 2) > config.max_disk_bytes {
+                return Err(StorageError::DiskBudgetExceeded);
+            }
         }
         Self::preflight_startup_migration(&path, &config)?;
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -387,6 +461,7 @@ impl SqliteEventStore {
             path,
             host_id,
             config,
+            companion_source,
         };
         store.check_budget(0)?;
         // Do not silently append after damage. Startup deliberately verifies all
@@ -401,7 +476,152 @@ impl SqliteEventStore {
         // re-ingestion or enforcement. Rule IDs make restart backfill idempotent.
         let mut store = store;
         store.backfill_detections()?;
+        if store.config.protect_new_evidence && store.evidence_protection_mode()?.is_none() {
+            let probe = protected_evidence::create_owner_probe(&store.config)?;
+            let provider = store
+                .config
+                .evidence_protection
+                .as_ref()
+                .ok_or(StorageError::Configuration)?;
+            let scheme = provider.scheme();
+            let key_identity = provider.key_identity();
+            if !matches!(scheme, "dpapi-user-v1" | "age-x25519-v1")
+                || (scheme == "age-x25519-v1"
+                    && key_identity
+                        .as_ref()
+                        .is_none_or(|id| id.is_empty() || id.len() > 256))
+                || (scheme == "dpapi-user-v1" && key_identity.is_some())
+            {
+                return Err(StorageError::Configuration);
+            }
+            let policy_growth = ((probe.len() + key_identity.as_ref().map_or(0, String::len))
+                as u64)
+                .saturating_mul(4)
+                .saturating_add(81_920);
+            store.ensure_append_budget(policy_growth)?;
+            let policy = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            Self::check_writer_budget(
+                &policy,
+                &store.path,
+                store.config.max_disk_bytes,
+                policy_growth,
+                store.companion_source.as_deref(),
+            )?;
+            policy.execute(
+                "INSERT INTO metadata(key,value) VALUES('raw_evidence_key_probe',?1)",
+                [probe],
+            )?;
+            policy.execute(
+                "INSERT INTO metadata(key,value) VALUES('raw_evidence_protection',?1)",
+                [scheme],
+            )?;
+            if let Some(identity) = key_identity {
+                policy.execute(
+                    "INSERT INTO metadata(key,value) VALUES('raw_evidence_key_id',?1)",
+                    [identity],
+                )?;
+            }
+            policy.commit()?;
+        }
+        store.check_budget(store.pending_checkpoint_growth()?)?;
         Ok(store)
+    }
+
+    fn evidence_protection_mode(&self) -> Result<Option<String>, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key='raw_evidence_protection'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+    pub fn evidence_protection_scheme(&self) -> Result<Option<String>, StorageError> {
+        self.evidence_protection_mode()
+    }
+
+    fn validate_evidence_protection(&self, writer: bool) -> Result<(), StorageError> {
+        match self.evidence_protection_mode()?.as_deref() {
+            None => {
+                let orphan_probe: bool = self.connection.query_row("SELECT EXISTS(SELECT 1 FROM metadata WHERE key IN ('raw_evidence_key_probe','raw_evidence_key_id'))", [], |r| r.get(0))?;
+                if orphan_probe {
+                    return Err(StorageError::ProtectionPolicy(
+                        "evidence protection policy marker is missing; automatic reset is refused"
+                            .into(),
+                    ));
+                }
+                if writer {
+                    let has_raw: bool = self.connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='raw_evidence')", [], |r| r.get(0))?;
+                    if !has_raw {
+                        return Ok(());
+                    }
+                    let protected: bool = self.connection.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM raw_evidence WHERE substr(payload,1,7)=?1)",
+                        [protected_evidence::PREFIX.as_slice()],
+                        |row| row.get(0),
+                    )?;
+                    if protected {
+                        return Err(StorageError::ProtectionPolicy("protected raw evidence has no policy marker; implicit policy reconstruction is refused".into()));
+                    }
+                }
+                Ok(())
+            }
+            Some(mode @ ("dpapi-user-v1" | "age-x25519-v1")) => {
+                if self.config.evidence_protection.is_none()
+                    || (writer && !self.config.protect_new_evidence)
+                {
+                    return Err(StorageError::ProtectionPolicy("protected raw evidence requires its original runtime identity; plaintext writer downgrade is refused".into()));
+                }
+                let provider = self
+                    .config
+                    .evidence_protection
+                    .as_ref()
+                    .ok_or(StorageError::Configuration)?;
+                if writer {
+                    provider.validate_new_writes().map_err(|_| {
+                        StorageError::ProtectionPolicy(
+                            "evidence protection prerequisites are not ready".into(),
+                        )
+                    })?;
+                }
+                if provider.scheme() != mode {
+                    return Err(StorageError::ProtectionPolicy(
+                        "archive/provider policy mismatch; migration is not automatic".into(),
+                    ));
+                }
+                let identity: Option<String> = self.connection.query_row("SELECT CASE WHEN length(value)<=256 THEN value ELSE NULL END FROM metadata WHERE key='raw_evidence_key_id'", [], |r| r.get(0)).optional()?.flatten();
+                let identity_exists: bool = self.connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='raw_evidence_key_id')",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if (mode == "age-x25519-v1"
+                    && (identity.as_ref().is_none_or(String::is_empty)
+                        || identity != provider.key_identity()))
+                    || (mode == "dpapi-user-v1" && identity_exists)
+                {
+                    return Err(StorageError::ProtectionPolicy(
+                        "archive evidence key identity is missing or changed".into(),
+                    ));
+                }
+                let probe: Option<String> = self.connection.query_row("SELECT CASE WHEN length(value)<=131072 THEN value ELSE NULL END FROM metadata WHERE key='raw_evidence_key_probe'", [], |r| r.get(0)).optional()?.flatten();
+                protected_evidence::verify_owner_probe(
+                    &probe.ok_or_else(|| {
+                        StorageError::ProtectionPolicy(
+                            "evidence protection owner probe is missing".into(),
+                        )
+                    })?,
+                    &self.config,
+                )?;
+                Ok(())
+            }
+            Some(_) => Err(StorageError::ProtectionPolicy(
+                "unsupported raw evidence protection policy".into(),
+            )),
+        }
     }
 
     fn backfill_detections(&mut self) -> Result<(), StorageError> {
@@ -565,6 +785,21 @@ impl SqliteEventStore {
     pub fn count(&self) -> Result<u64, StorageError> {
         <Self as EventStore>::count(self)
     }
+
+    /// Cooperative cancellation for read-only validation. Never use this guard
+    /// for writes whose commit acknowledgement must remain unambiguous.
+    pub fn set_read_operation_guard(
+        &self,
+        deadline: Instant,
+        mut cancelled: impl FnMut() -> bool + Send + 'static,
+    ) -> Result<(), StorageError> {
+        self.connection
+            .progress_handler(
+                1000,
+                Some(move || Instant::now() >= deadline || cancelled()),
+            )
+            .map_err(StorageError::from)
+    }
     pub fn append_batch(&mut self, events: &[SecurityEvent]) -> Result<(), StorageError> {
         <Self as EventStore>::append_batch(self, events)
     }
@@ -588,7 +823,7 @@ impl SqliteEventStore {
             )
             .optional()?;
         row.map(|(payload, digest)| {
-            let payload = evidence_codec::decode(&payload)?;
+            let payload = evidence_codec::decode_stored(&payload, &self.config)?;
             if Sha256::digest(&payload).as_slice() != digest.as_slice() {
                 return Err(StorageError::Corrupt("raw evidence digest mismatch".into()));
             }
@@ -651,6 +886,7 @@ impl SqliteEventStore {
                 return Ok(());
             }
         };
+        reader.validate_evidence_protection(true)?;
         for (kind, name) in [
             ("table", "raw_evidence"),
             ("table", "events"),
@@ -777,7 +1013,50 @@ impl SqliteEventStore {
     }
 
     fn check_budget(&self, estimated_growth: u64) -> Result<(), StorageError> {
-        if self.disk_bytes()?.saturating_add(estimated_growth) > self.config.max_disk_bytes {
+        if self
+            .disk_bytes()?
+            .saturating_add(Self::companion_bytes(self.companion_source.as_deref())?)
+            .saturating_add(estimated_growth)
+            > self.config.max_disk_bytes
+        {
+            return Err(StorageError::DiskBudgetExceeded);
+        }
+        Ok(())
+    }
+
+    fn companion_bytes(source: Option<&Path>) -> Result<u64, StorageError> {
+        let Some(source) = source else {
+            return Ok(0);
+        };
+        // A disappeared original is a failed copy, not newly available space.
+        if !fs::metadata(source)?.is_file() {
+            return Err(StorageError::Configuration);
+        }
+        Self::files_bytes(source)
+    }
+
+    // Call after BEGIN IMMEDIATE and before mutations. The writer lock keeps
+    // SQLite page accounting stable; never assume a pending checkpoint has
+    // already released WAL space, or count logical deletion/compression savings.
+    fn check_writer_budget(
+        connection: &Connection,
+        path: &Path,
+        budget: u64,
+        estimated_growth: u64,
+        companion_source: Option<&Path>,
+    ) -> Result<(), StorageError> {
+        let pages: u64 = connection.pragma_query_value(None, "page_count", |r| r.get(0))?;
+        let page_size: u64 = connection.pragma_query_value(None, "page_size", |r| r.get(0))?;
+        let logical_bytes = pages
+            .checked_mul(page_size)
+            .ok_or_else(|| StorageError::Corrupt("invalid SQLite page accounting".into()))?;
+        let pending = logical_bytes.saturating_sub(fs::metadata(path)?.len());
+        if Self::files_bytes(path)?
+            .saturating_add(Self::companion_bytes(companion_source)?)
+            .saturating_add(pending)
+            .saturating_add(estimated_growth)
+            > budget
+        {
             return Err(StorageError::DiskBudgetExceeded);
         }
         Ok(())
@@ -911,7 +1190,7 @@ impl EventStore for SqliteEventStore {
             }
             let raw_payload = raw_payload
                 .as_deref()
-                .map(evidence_codec::encode)
+                .map(|bytes| evidence_codec::encode_stored(bytes, &self.config))
                 .transpose()?;
             total_bytes = total_bytes
                 .saturating_add(payload.len())
@@ -927,16 +1206,22 @@ impl EventStore for SqliteEventStore {
             });
         }
         // Conservative accounting includes index and WAL page amplification.
-        self.ensure_append_budget(
-            (total_bytes as u64)
-                .saturating_mul(4)
-                .saturating_add(records.len() as u64 * 16_384)
-                .saturating_add(65_536),
-        )?;
+        let estimated_growth = (total_bytes as u64)
+            .saturating_mul(4)
+            .saturating_add(records.len() as u64 * 16_384)
+            .saturating_add(65_536);
+        self.ensure_append_budget(estimated_growth)?;
         let checkpoint = self.checkpoint()?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::check_writer_budget(
+            &transaction,
+            &self.path,
+            self.config.max_disk_bytes,
+            estimated_growth,
+            self.companion_source.as_deref(),
+        )?;
         let head: Option<(i64, Vec<u8>)> = transaction
             .query_row(
                 "SELECT position,hash FROM events ORDER BY position DESC LIMIT 1",
@@ -1147,7 +1432,7 @@ impl EventStore for SqliteEventStore {
                     let digest: Option<Vec<u8>> = row.get(14)?;
                     let raw_payload = raw_payload
                         .ok_or_else(|| StorageError::Corrupt("missing raw evidence".into()))?;
-                    let raw_payload = evidence_codec::decode(&raw_payload)?;
+                    let raw_payload = evidence_codec::decode_stored(&raw_payload, &self.config)?;
                     let computed: [u8; 32] = Sha256::digest(&raw_payload).into();
                     if digest.as_deref() != Some(computed.as_slice()) {
                         return Err(StorageError::Corrupt("raw evidence hash mismatch".into()));
@@ -1223,6 +1508,8 @@ fn hex(bytes: &[u8]) -> String {
 
 #[derive(Debug, Error)]
 pub enum StorageError {
+    #[error("evidence protection policy: {0}")]
+    ProtectionPolicy(String),
     #[error("invalid storage configuration")]
     Configuration,
     #[error("unsupported storage schema version: {0}")]

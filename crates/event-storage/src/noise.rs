@@ -14,10 +14,15 @@ pub struct NoiseCleanupReport {
 impl SqliteEventStore {
     /// Creates a separate verified archive; never changes the source. The caller
     /// must stop writers, preserve a protected backup and atomically replace it.
+    /// Admission shares one budget across source/destination DB, WAL and SHM.
+    /// External backups are unknown to this API and require caller accounting.
     pub fn copy_without_noise(
         &self,
         destination: &Path,
     ) -> Result<NoiseCleanupReport, StorageError> {
+        // Read-only access may decrypt with protection disabled. It must not
+        // implicitly authorize an unprotected destination copy.
+        self.validate_evidence_protection(true)?;
         // Writers must be stopped by the maintenance caller. Verification and
         // copying share one stable read snapshot, including raw evidence.
         let _snapshot = self.connection.unchecked_transaction()?;
@@ -30,11 +35,28 @@ impl SqliteEventStore {
         if self.checkpoint()?.is_some() {
             return Err(StorageError::Configuration);
         }
-        let mut target = Self::open(destination, self.config.clone())?;
-        target.connection.execute(
-            "UPDATE metadata SET value=?1 WHERE key='host_id'",
-            [self.host_id.to_string()],
+        let mut target =
+            Self::open_scoped(destination, self.config.clone(), Some(self.path.clone()))?;
+        let target_host = self.host_id.to_string();
+        let identity_growth = (target_host.len() as u64)
+            .saturating_mul(4)
+            .saturating_add(81_920);
+        target.ensure_append_budget(identity_growth)?;
+        let identity_transaction = target
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::check_writer_budget(
+            &identity_transaction,
+            &target.path,
+            target.config.max_disk_bytes,
+            identity_growth,
+            target.companion_source.as_deref(),
         )?;
+        identity_transaction.execute(
+            "UPDATE metadata SET value=?1 WHERE key='host_id'",
+            [target_host],
+        )?;
+        identity_transaction.commit()?;
         target.host_id = self.host_id;
         let mut query = self
             .connection
@@ -108,15 +130,25 @@ impl SqliteEventStore {
                 .ok_or_else(|| StorageError::Corrupt("oversized detection reference".into()))?;
             let payload = payload
                 .ok_or_else(|| StorageError::Corrupt("oversized detection annotation".into()))?;
-            target.ensure_append_budget(
-                (payload.len() as u64)
-                    .saturating_mul(4)
-                    .saturating_add(16_384 + 65_536),
+            let annotation_growth = (payload.len() as u64)
+                .saturating_mul(4)
+                .saturating_add(16_384 + 65_536);
+            target.ensure_append_budget(annotation_growth)?;
+            let annotation_transaction = target
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            Self::check_writer_budget(
+                &annotation_transaction,
+                &target.path,
+                target.config.max_disk_bytes,
+                annotation_growth,
+                target.companion_source.as_deref(),
             )?;
-            target.connection.execute(
+            annotation_transaction.execute(
                 "INSERT OR REPLACE INTO detections(id,event_id,payload) VALUES(?1,?2,?3)",
                 params![id, event, payload],
             )?;
+            annotation_transaction.commit()?;
         }
         let after = target.verify_integrity()?;
         if before.verified_events != after.verified_events + removed.values().sum::<u64>() {
@@ -133,15 +165,25 @@ impl SqliteEventStore {
         if provenance.len() > MAX_QUERY_BYTES {
             return Err(StorageError::QueryResultTooLarge);
         }
-        target.ensure_append_budget(
-            (provenance.len() as u64)
-                .saturating_mul(4)
-                .saturating_add(81_920),
+        let provenance_growth = (provenance.len() as u64)
+            .saturating_mul(4)
+            .saturating_add(81_920);
+        target.ensure_append_budget(provenance_growth)?;
+        let provenance_transaction = target
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::check_writer_budget(
+            &provenance_transaction,
+            &target.path,
+            target.config.max_disk_bytes,
+            provenance_growth,
+            target.companion_source.as_deref(),
         )?;
-        target.connection.execute(
+        provenance_transaction.execute(
             "INSERT INTO metadata(key,value) VALUES('noise_cleanup_provenance',?1)",
             [provenance],
         )?;
+        provenance_transaction.commit()?;
         target.check_budget(target.pending_checkpoint_growth()?)?;
         let busy: u64 =
             target

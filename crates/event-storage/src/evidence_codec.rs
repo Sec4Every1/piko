@@ -6,6 +6,18 @@ const MAGIC: &[u8; 7] = b"PIKOEV\x01";
 const HEADER: usize = 11;
 const MAX_BYTES: usize = 4 * 1024 * 1024;
 
+pub fn encode_stored(bytes: &[u8], config: &crate::StorageConfig) -> Result<Vec<u8>, StorageError> {
+    crate::protected_evidence::seal(encode(bytes)?, config)
+}
+
+pub fn decode_stored(bytes: &[u8], config: &crate::StorageConfig) -> Result<Vec<u8>, StorageError> {
+    if crate::protected_evidence::is_protected(bytes) {
+        decode(&crate::protected_evidence::open(bytes, config)?)
+    } else {
+        decode(bytes)
+    }
+}
+
 pub fn encode(bytes: &[u8]) -> Result<Vec<u8>, StorageError> {
     if bytes.len() > MAX_BYTES {
         return Err(StorageError::InvalidRawEvidence);

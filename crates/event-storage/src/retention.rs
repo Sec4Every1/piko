@@ -126,6 +126,28 @@ impl SqliteEventStore {
     /// Expire only a contiguous, verified old prefix. Never cross a recent record.
     /// Each atomic step is bounded to 32 records / 4 MiB decoded evidence.
     pub fn expire_before(&mut self, cutoff: i64) -> Result<u64, StorageError> {
+        let mut refused_growth = None;
+        match self.expire_before_once(cutoff, &mut refused_growth) {
+            Err(StorageError::DiskBudgetExceeded) => {
+                let Some(growth) = refused_growth else {
+                    return Err(StorageError::DiskBudgetExceeded);
+                };
+                // The failed pass has dropped its transaction and readers and
+                // made no mutations. Reclaim only through the existing bounded,
+                // nonblocking checkpoint admission, then re-read/reverify the
+                // prefix once. A second refusal is returned without looping.
+                self.ensure_append_budget(growth)?;
+                self.expire_before_once(cutoff, &mut None)
+            }
+            result => result,
+        }
+    }
+
+    fn expire_before_once(
+        &mut self,
+        cutoff: i64,
+        refused_growth: &mut Option<u64>,
+    ) -> Result<u64, StorageError> {
         let mut checkpoint = self.checkpoint()?.unwrap_or(Checkpoint {
             host: self.host_id,
             position: 0,
@@ -140,10 +162,6 @@ impl SqliteEventStore {
         }
         // Deletion and checkpoint metadata still generate WAL before space can
         // be reused. Admission never assumes that expiry immediately frees disk.
-        let maintenance_base = self
-            .disk_bytes()?
-            .saturating_add(self.pending_checkpoint_growth()?);
-        let maintenance_budget = self.config.max_disk_bytes;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -182,8 +200,10 @@ impl SqliteEventStore {
             }
             let raw_digest = if let Some(id) = event.raw_evidence_reference {
                 let encoded: Option<Vec<u8>> = row.get(13)?;
-                let decoded =
-                    evidence_codec::decode(&encoded.ok_or(StorageError::InvalidRawEvidence)?)?;
+                let decoded = evidence_codec::decode_stored(
+                    &encoded.ok_or(StorageError::InvalidRawEvidence)?,
+                    &self.config,
+                )?;
                 bytes = bytes.saturating_add(decoded.len());
                 let digest: [u8; 32] = Sha256::digest(&decoded).into();
                 let stored: Option<Vec<u8>> = row.get(14)?;
@@ -242,9 +262,16 @@ impl SqliteEventStore {
             .saturating_mul(4)
             .saturating_add(count * 16_384)
             .saturating_add(65_536);
-        if maintenance_base.saturating_add(estimated_growth) > maintenance_budget {
-            return Err(StorageError::DiskBudgetExceeded);
-        }
+        *refused_growth = Some(estimated_growth);
+        Self::check_writer_budget(
+            &transaction,
+            &self.path,
+            self.config.max_disk_bytes,
+            estimated_growth,
+            self.companion_source.as_deref(),
+        )?;
+        // Only admission failures before the first mutation permit a retry.
+        *refused_growth = None;
         transaction.execute("DELETE FROM detections WHERE event_id IN (SELECT event_id FROM events WHERE position<=?1)",[checkpoint.position])?;
         transaction.execute(
             "DELETE FROM events WHERE position<=?1",

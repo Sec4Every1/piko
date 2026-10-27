@@ -440,6 +440,7 @@ fn storage_error(error: StorageError) -> ApiError {
             "evidence_corrupt"
         }
         StorageError::DiskBudgetExceeded => "disk_budget_exhausted",
+        StorageError::ProtectionPolicy(_) => "evidence_protection_unavailable",
         _ => "storage_error",
     };
     api_error(code, &error.to_string())
