@@ -1,5 +1,29 @@
 # Architecture & Language Audit
 
+Delta 2026-10-27 — ADR0048-0053: il core recuperabile piko-crypto resta safe
+Rust e usa age-X25519/zeroize; DPAPI protegge la copia locale della chiave.
+Provider, bundle/receipt, ticket distinti per backup e attivazione, recupero e
+verifica archivio sotto identita servizio sono collegati a IPC e desktop/helper.
+L'adapter DPAPI esistente azzera la copia nativa bounded prima di LocalFree;
+non e una garanzia su ogni copia di libreria o allocatore. Nessuna nuova lingua,
+funzione FFI o concessione di privilegi; le due opzioni di protezione restano
+false per impostazione predefinita. Il grafo lock ereditato, incluse variazioni
+di versioni non limitate alla crittografia, ha superato controlli locali offline
+con lock invariati; audit sicurezza dipendenze e qualifica Windows restano aperti.
+Evidenza: [core](validation/2026-10-27-recoverable-key-core.md),
+[backend](validation/2026-10-27-key-backend.md),
+[desktop/helper](validation/2026-10-27-key-desktop.md).
+
+La procedura PowerShell di attivazione e incorporata nell'helper: solo sorgente
+costante su stdin, processo nascosto e scadenza, attraverso il confine UAC
+esistente. La manutenzione usa il writer originale e admission sotto lock
+SQLite, conteggiando DB/WAL/SHM e sorgente/destinazione delle copie. Errori e
+indisponibilita restano visibili; risparmio logico non equivale a spazio fisico.
+Routing e recupero sono verificati con fixture isolate, senza installazione o
+attivazione. Evidenza: [storage](validation/2026-10-27-storage-foundation.md),
+[manutenzione](validation/2026-10-27-maintenance-vertical.md),
+[recupero/pacchetto](validation/2026-10-27-recovery-package.md).
+
 Delta 2026-10-20 — ADR 0033: account lifecycle facts reuse the safe Rust XML
 validator, SQLite query and Svelte activity panel. KEEP existing languages;
 no new collector, FFI, Windows permission or dependency.

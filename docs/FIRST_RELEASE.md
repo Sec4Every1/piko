@@ -48,6 +48,8 @@ Existing source for experiments is preserved; its presence does not expand this
 release's claims or acceptance. RELEASE-01 signing/secure distribution remains
 the subsequent distribution milestone, separate from a labelled unsigned preview.
 
+Qualification procedure: [WINDOWS_QUALIFICATION.md](WINDOWS_QUALIFICATION.md).
+
 ## Finite exit gates
 
 1. SOURCE: close concrete source blockers in included paths; keep docs/defaults

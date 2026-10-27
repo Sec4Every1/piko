@@ -160,3 +160,14 @@ il vecchio runtime incoerente non viene dichiarato qualificato. I backup restano
 disponibili. Questa procedura non ripristina automaticamente lo storico e non
 risolve un archivio già pieno. La prova reale richiede l'approvazione UAC; quella
 tentata durante lo sviluppo è stata annullata. Dettagli in ADR0036.
+
+## Ripresa delle nuove transazioni protette
+
+Per una transazione di aggiornamento riconosciuta e ancora coerente,
+Resume-PikoUpdate.cmd avvia la ripresa guidata dopo il consenso Windows.
+Non ripristina automaticamente lo storico: stato sconosciuto, copie parziali o
+evidenze cambiate vengono conservati e l'operazione rifiuta di proseguire.
+Restore-PikoEvidenceKey.cmd serve al recupero della chiave nella stessa
+installazione con il backup esterno del formato recuperabile; non importa un
+archivio portabile e non recupera vecchie evidenze protette solo con DPAPI.
+Le prove reali di installazione, interruzione e recupero restano da completare.

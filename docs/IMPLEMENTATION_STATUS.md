@@ -1,5 +1,26 @@
 # Project status
 
+First-delivery scope is frozen in [FIRST_RELEASE.md](FIRST_RELEASE.md);
+current qualification gates are tracked in [NEXT_SESSION.md](NEXT_SESSION.md).
+Published source includes bounded observation history/navigation, protected
+storage admission and automatic maintenance, recoverable-key core, the real
+backend -> IPC -> desktop/helper key workflow and guarded update/recovery
+entry points. New installations/profiles default to 2048 MiB and 12 months;
+existing configurations are preserved. Relevant local checks passed on selected
+source snapshots: [history](validation/2026-10-27-history-desktop.md),
+[storage](validation/2026-10-27-storage-foundation.md),
+[maintenance](validation/2026-10-27-maintenance-vertical.md),
+[crypto/dependency graph](validation/2026-10-27-recoverable-key-core.md),
+[key backend](validation/2026-10-27-key-backend.md),
+[key desktop/helper](validation/2026-10-27-key-desktop.md) and
+[recovery/package](validation/2026-10-27-recovery-package.md).
+These tests, fixture scenarios and compiled candidates do not qualify the
+installed Windows runtime or DPAPI/UAC/SCM recovery. New-evidence protection
+flags default off. The inherited locked dependency graph was checked locally;
+a complete security dependency audit and first-release qualification remain
+open. Historical limitations below still apply where these checkpoints do not
+explicitly extend them.
+
 Piko is an early-stage Windows security-monitoring prototype. It is not a complete endpoint protection product; use the feature matrix and security model to understand current capabilities and limits.
 
 ## Implemented areas

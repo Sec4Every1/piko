@@ -1,9 +1,15 @@
 # Tracciabilita dei 116 requisiti
 
-Aggiornamento: 20 ottobre 2026. Questa matrice non dichiara completato il prodotto.
+Aggiornamento: 27 ottobre 2026. Questa matrice non dichiara completato il prodotto.
 Le righe sono sezioni della specifica, ciascuna contiene piu criteri di accettazione.
 Parziale significa codice funzionante per una porzione; non implementato significa nessun percorso completo disponibile.
 Le decisioni architetturali da sole non contano come implementazione.
+
+La prima consegna ha perimetro congelato in [FIRST_RELEASE.md](FIRST_RELEASE.md).
+Il sorgente consolidato ha verifiche locali documentate; la qualifica Windows
+dell'installazione resta aperta. Nessun requisito diventa completo per i soli
+test locali; le opzioni di protezione delle nuove evidenze restano disattivate
+per impostazione predefinita.
 
 Filtri essenziali installati, storico ripulito dopo consenso specifico con backup
 e nuova catena esplicita. ADR 0029/0030; non segmentazione HOT/WARM/COLD,
@@ -61,10 +67,10 @@ checkpoint firmati o garanzia di 12 mesi per qualsiasi volume entro 2 GB.
 | 58 | PATIENT ZERO | Non implementato | docs/REQUIREMENTS.md, sezione 58 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 59 | PREVENTED INCIDENT | Non implementato | docs/REQUIREMENTS.md, sezione 59 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 60 | SINGLE-HOST MODE | Parziale | apps/desktop-ui; apps/security-service; scripts; docs/MANUALE_UTENTE.md | Interfaccia reale e funzioni documentate; non equivalgono al prodotto completo. Consultare IMPLEMENTATION_STATUS per limiti e qualificazione. |
-| 61 | CRYPTOGRAPHIC CORE | Parziale | crates/event-storage; crates/win-platform/src/file_response.rs; docs/SECURITY_MODEL.md | Catena hash locale e DPAPI recovery; non cifratura completa dei log, checkpoint firmati o ancoraggio indipendente. |
+| 61 | CRYPTOGRAPHIC CORE | Parziale | crates/crypto; crates/event-storage; crates/win-platform/src/file_response.rs; ADR0048 | Envelope age-X25519 bounded legati all'archivio, recupero con identita pubblica attesa e wrapping locale DPAPI; test reali del core con adapter locale finto. Catena hash locale, non cifratura completa dei log, checkpoint firmati o ancoraggio indipendente. Qualifica Windows e audit sicurezza dipendenze aperti. |
 | 62 | POST-QUANTUM CRYPTOGRAPHY | Non implementato | docs/REQUIREMENTS.md, sezione 62 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
-| 63 | KEY STORAGE | Parziale | crates/event-storage; crates/win-platform/src/file_response.rs; docs/SECURITY_MODEL.md | Catena hash locale e DPAPI recovery; non cifratura completa dei log, checkpoint firmati o ancoraggio indipendente. |
-| 64 | SECURITY UPDATE SYSTEM | Non implementato | docs/REQUIREMENTS.md, sezione 64 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
+| 63 | KEY STORAGE | Parziale | runtime/key_bundle.rs; runtime/key_recovery.rs; runtime/key_worker.rs; ADR0048-0050/0052 | Formato v2 age/DPAPI, backup guidato con autorizzazione e codice reinserito, ticket distinti per attivazione, ripristino nella stessa installazione con prova archivio e stato durevole. Percorso backend -> IPC -> desktop/helper consolidato e verificato localmente; flag predefiniti disattivati. Qualifica installata, importazione portabile, rotazione e TPM mancanti. |
+| 64 | SECURITY UPDATE SYSTEM | Parziale | scripts/Update-Piko.ps1; scripts/Resume-PikoUpdate.ps1; ADR0046/0047 | Attivazione incorporata nell'helper coperto dal manifesto; refresh con backup, verifica sotto identita servizio e ripresa di journal riconosciuti con archivio invariato. Routing e metadati verificati con fixture isolate; firma editore, migrazioni tra versioni, recupero immagini parziali/dati cambiati e qualifica SCM ancora mancanti. |
 | 66 | EVIDENCE CAPSULE | Non implementato | docs/REQUIREMENTS.md, sezione 66 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 67 | COUNTERFACTUAL ANALYSIS | Non implementato | docs/REQUIREMENTS.md, sezione 67 | Da implementare e qualificare end-to-end; nessuna funzionalita dichiarata disponibile. |
 | 68 | PRIVACY | Parziale | crates/event-storage; crates/win-platform/src/file_response.rs; docs/SECURITY_MODEL.md | Catena hash locale e DPAPI recovery; non cifratura completa dei log, checkpoint firmati o ancoraggio indipendente. |
@@ -84,7 +90,7 @@ checkpoint firmati o garanzia di 12 mesi per qualsiasi volume entro 2 GB.
 | 84 | INCIDENT VIEW | Parziale | apps/desktop-ui; apps/security-service; scripts; docs/MANUALE_UTENTE.md | Interfaccia reale e funzioni documentate; non equivalgono al prodotto completo. Consultare IMPLEMENTATION_STATUS per limiti e qualificazione. |
 | 85 | GRAPHICAL INCIDENT VIEW | Parziale | apps/desktop-ui/src/lib/Investigation.svelte; ADR 0012 | Vista paginata delle relazioni osservate, dettagli ed evidenze. Nessuna ricostruzione causale di incidenti. |
 | 86 | SECURITY LOG / SIEM UI | Parziale | apps/desktop-ui; apps/security-service; scripts; docs/MANUALE_UTENTE.md | Interfaccia reale e funzioni documentate; non equivalgono al prodotto completo. Consultare IMPLEMENTATION_STATUS per limiti e qualificazione. |
-| 87 | QUERY LANGUAGE | Parziale | crates/event-storage/src/query_language.rs; tests/storage.rs | Campi in allowlist, confronti tipizzati, AND/OR/parentesi, parametri SQL. Mancano FOLLOWED_BY, RELATED_TO e campi non raccolti. |
+| 87 | QUERY LANGUAGE | Parziale | crates/event-storage/src/query_language.rs; tests/observation_history.rs; ADR0043 | Campi in allowlist, confronti tipizzati, parametri SQL e process.parent_instance verificati localmente; nessuna relazione ricostruita dal solo PID. FOLLOWED_BY, RELATED_TO e campi non raccolti ancora mancanti. |
 | 88 | QUERY BUILDER | Parziale | apps/desktop-ui/src/lib/QueryBuilder.svelte; queries.ts | Builder di condizioni e 20 espressioni salvate locali. Mancano sequenze temporali e query di grafo avanzate. |
 | 89 | COMMAND PALETTE | Parziale | apps/desktop-ui; apps/security-service; scripts; docs/MANUALE_UTENTE.md | Interfaccia reale e funzioni documentate; non equivalgono al prodotto completo. Consultare IMPLEMENTATION_STATUS per limiti e qualificazione. |
 | 90 | ONBOARDING | Parziale | apps/desktop-ui; apps/security-service; scripts; docs/MANUALE_UTENTE.md | Interfaccia reale e funzioni documentate; non equivalgono al prodotto completo. Consultare IMPLEMENTATION_STATUS per limiti e qualificazione. |
@@ -114,3 +120,21 @@ checkpoint firmati o garanzia di 12 mesi per qualsiasi volume entro 2 GB.
 | 115 | OBIETTIVO UX FINALE | Parziale | Cargo.toml; docs/ARCHITECTURE.md; docs/LANGUAGE_DECISIONS.md | Principi e struttura presenti; la copertura funzionale integrale non e ancora realizzata. |
 | 116 | DEFINIZIONE DEL PRODOTTO | Parziale | Cargo.toml; docs/ARCHITECTURE.md; docs/LANGUAGE_DECISIONS.md | Principi e struttura presenti; la copertura funzionale integrale non e ancora realizzata. |
 
+
+GRAPH-01: cronologia osservata con periodo, pagine di massimo 128 eventi,
+cursore orario/UUID e navigazione padre/figlio bounded, backend -> IPC -> UI.
+Verifiche locali: [core](validation/2026-10-27-history-core.md),
+[storage](validation/2026-10-27-history-storage.md),
+[backend](validation/2026-10-27-history-backend.md) e
+[desktop](validation/2026-10-27-history-desktop.md). Nessuno snapshot immutabile
+o motore causale; qualifica installata aperta.
+
+STORE-01/02: [fondazione storage](validation/2026-10-27-storage-foundation.md),
+[manutenzione](validation/2026-10-27-maintenance-vertical.md),
+[core chiavi e grafo dipendenze](validation/2026-10-27-recoverable-key-core.md),
+[backend chiavi](validation/2026-10-27-key-backend.md),
+[desktop/helper](validation/2026-10-27-key-desktop.md) e
+[recupero/pacchetto](validation/2026-10-27-recovery-package.md) hanno evidenza
+locale su sorgente selezionato. Il lock ereditato e stato controllato localmente,
+non sottoposto a un audit di sicurezza completo. Fixture e build non qualificano
+DPAPI/UAC/SCM o protezione installata; nessuna attivazione live e dichiarata.

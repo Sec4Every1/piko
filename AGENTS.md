@@ -28,14 +28,33 @@
   artifacts out of tracked source and publication. Stage explicitly, not `git add .`.
 
 ## Delivery and token discipline
+- Delivery direction accepted 2026-10-27: prioritize consolidation and the
+  first usable release in FIRST_RELEASE.md before further APP-03/browser work.
+  Preserve those experiments, pass-through and not_enforced. "Continua/vai
+  avanti" confirms this direction; resume autonomously without asking the user
+  to restate scope. Close finite deliveries rather than stopping at checkpoints.
+- Prepare coherent reviewed local commits, then push checked source to a
+  development branch. The user's 2026-10-27 acceptance authorizes this workflow;
+  merge to main, releases and manual remote CI dispatch remain separate.
+  Before each push check exact staged scope, private data/artifacts and relevant
+  validation. Preserve all unrelated local changes; do not use broad staging.
+- Current user authorization (2026-10-24): resume targeted local validation.
+  Run affected tests, type/compiler checks, Clippy and formatting checks as
+  appropriate; build affected components when needed. Fix failures and continue.
+  Use existing tooling/dependencies; do not install/update tools or rewrite
+  lockfiles merely to enable checks. Keep tests isolated from installed runtime
+  and real evidence. No installation, driver loading, live-protection changes
+  or manual remote CI dispatch. Development-branch push follows the newer
+  authorization above. New source stays unverified until relevant checks
+  actually pass; local success never implies Windows/security qualification.
 - Select the highest-priority ready queue item. Fix its prerequisites first.
   Deliver the named outcome, rather than replacing it with unrelated easy tasks.
 - Use targeted rg/read operations and concise tool output. Save long logs under
   ignored `.build/`; inspect failures rather than repeatedly printing whole logs.
 - Run checks appropriate to the change. Broaden after failures or contract changes;
   do not rerun passed checks without a reason. Never claim an unrun check passed.
-- Publish one reviewed code checkpoint for automatic full CI; keep its pending
-  status explicit. Avoid idle polling and repeated cold desktop builds/audits when
+- Prepare reviewed code checkpoints; releases, main merges and manual remote CI
+  need separate authorization. Avoid idle polling and repeated cold desktop builds/audits when
   targeted local evidence already supports continuing independent work.
 - Existing checks: `scripts/ci-checks.ps1`, `scripts/ci-sbom.ps1` (full release/CI);
   targeted `cargo test -p <crate>`, workspace fmt/Clippy; frontend npm check/test,
@@ -45,6 +64,8 @@
 - At a milestone or interruption update NEXT_SESSION: outcome, evidence, remaining
   blocker and exact next action. Update queue/matrix/manual only where affected.
   Replace stale state; keep detailed evidence in VALIDATION/ADRs, not this file.
+- A checkpoint is a resume record, not a stopping point. Continue from its exact
+  next action in the same turn while meaningful authorized source work remains.
 - Final response: result, verification, material limitation and next item; brief.
 
 ## Delegation

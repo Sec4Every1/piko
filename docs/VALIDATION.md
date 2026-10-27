@@ -1,5 +1,29 @@
 # Validation
 
+## 2026-10-27: consolidated first-release source, local evidence
+
+Checked included source is published on `development/first-release`; main merge,
+release publication and manual remote CI dispatch remain separate. Exact-source
+local records: [history](validation/2026-10-27-history-desktop.md),
+[storage](validation/2026-10-27-storage-foundation.md),
+[maintenance](validation/2026-10-27-maintenance-vertical.md),
+[key core](validation/2026-10-27-recoverable-key-core.md),
+[key backend](validation/2026-10-27-key-backend.md),
+[key desktop](validation/2026-10-27-key-desktop.md),
+[recovery/package](validation/2026-10-27-recovery-package.md),
+[script guards](validation/2026-10-27-check-script-guards.md),
+[workspace formatting correction](validation/2026-10-27-win-platform-format.md),
+[isolated IPC smoke](validation/2026-10-27-isolated-ipc-smoke.md).
+
+Read each record's limits: fixtures, debug compilation and synthetic IPC/UI are
+not Windows qualification. Event Log persistence after restart, installation,
+SCM/UAC/DPAPI activation/recovery and the full release gate remain open.
+Protection flags stay off; installed runtime/evidence were not changed. The
+unsigned debug preview stays local/ignored. Remote CI success is unverified.
+Historical source-only records below describe the state on their original date;
+they do not revoke the newer targeted-check/development-push authorization.
+
+
 ## 2026-10-22: archive copy admission
 
 Noise-copy destination now admits annotation/provenance writes with pending
