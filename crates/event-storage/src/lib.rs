@@ -109,6 +109,40 @@ struct PreparedRecord {
 }
 
 impl SqliteEventStore {
+    /// Bounded keyset page ordered by observation time, then canonical event UUID.
+    /// The cursor is bound data, never a caller-supplied SQL fragment.
+    pub fn observation_page(
+        &self,
+        expression: &str,
+        before: Option<(i64, Uuid)>,
+    ) -> Result<Vec<SecurityEvent>, StorageError> {
+        use rusqlite::types::Value;
+        let mut values = vec![
+            before.map_or(Value::Null, |v| Value::Integer(v.0)),
+            before.map_or(Value::Null, |v| Value::Text(v.1.to_string())),
+        ];
+        let predicate = query_language::compile(expression, &mut values)
+            .map_err(|e| StorageError::QuerySyntax(e.to_string()))?;
+        let observed = "json_extract(CAST(payload AS TEXT),'$.observation_time')";
+        // Check each stored row's size in SQLite before copying its payload
+        // into Rust memory, including a corrupted oversized archive row.
+        let sql = format!("SELECT CASE WHEN length(payload)<={MAX_QUERY_BYTES} THEN payload ELSE NULL END FROM events WHERE ({predicate}) AND (?1 IS NULL OR {observed} < ?1 OR ({observed} = ?1 AND event_id < ?2)) ORDER BY {observed} DESC, event_id DESC LIMIT 129");
+        let mut statement = self.connection.prepare(&sql)?;
+        let rows = statement.query_map(rusqlite::params_from_iter(values), |row| {
+            row.get::<_, Option<Vec<u8>>>(0)
+        })?;
+        let mut bytes = 0usize;
+        let mut events = Vec::new();
+        for row in rows {
+            let payload = row?.ok_or(StorageError::QueryResultTooLarge)?;
+            bytes = bytes.saturating_add(payload.len());
+            if bytes > MAX_QUERY_BYTES {
+                return Err(StorageError::QueryResultTooLarge);
+            }
+            events.push(SecurityEvent::decode(&payload)?);
+        }
+        Ok(events)
+    }
     pub fn retention_months(&self) -> Option<u8> {
         self.config.retention_months
     }

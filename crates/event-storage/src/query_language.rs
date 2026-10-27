@@ -236,6 +236,10 @@ fn field_column(field: &str) -> Option<(&'static str, bool)> {
         "event.type" => ("event_type", false),
         "event.severity" => ("severity", false),
         "event.time" => ("wall_time", true),
+        "event.observed_at" => (
+            "json_extract(CAST(payload AS TEXT),'$.observation_time')",
+            true,
+        ),
         "host.id" => ("host_id", false),
         "sensor.id" => ("sensor_id", false),
         "process.name" => (
@@ -248,6 +252,10 @@ fn field_column(field: &str) -> Option<(&'static str, bool)> {
         ),
         "process.instance" => (
             "json_extract(CAST(payload AS TEXT),'$.process.instance_id')",
+            false,
+        ),
+        "process.parent_instance" => (
+            "json_extract(CAST(payload AS TEXT),'$.parent_process.instance_id')",
             false,
         ),
         "process.pid" => ("json_extract(CAST(payload AS TEXT),'$.process.pid')", true),
