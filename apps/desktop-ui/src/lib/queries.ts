@@ -1,4 +1,4 @@
-export const queryFields = ['process.name', 'process.path', 'process.instance', 'process.pid', 'user.sid', 'event.id', 'event.type', 'event.severity', 'event.category', 'event.operation', 'event.result', 'event.time', 'host.id', 'sensor.id', 'target.identifier'] as const;
+export const queryFields = ['process.name', 'process.path', 'process.instance', 'process.parent_instance', 'process.pid', 'user.sid', 'event.id', 'event.type', 'event.severity', 'event.category', 'event.operation', 'event.result', 'event.time', 'host.id', 'sensor.id', 'target.identifier'] as const;
 export const savedQueryKey = 'piko.saved-queries.v1';
 export interface SavedQuery { name: string; expression: string }
 const bytes = (text: string) => new TextEncoder().encode(text).length;

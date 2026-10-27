@@ -42,11 +42,46 @@ async fn get_health() -> Result<HealthSnapshot, String> {
 #[tauri::command]
 async fn get_investigation(
     process_instance: String,
+    observed_from: Option<i64>,
+    observed_until: Option<i64>,
+    before: Option<(i64, String)>,
+    paged: Option<bool>,
 ) -> Result<piko_security_core::Investigation, String> {
     let process_instance = process_instance
         .parse()
         .map_err(|_| "invalid process instance UUID".to_string())?;
-    match piko_ipc::call(Command::GetInvestigation { process_instance })
+    let before = before
+        .map(|(time, id)| id.parse().map(|id| (time, id)))
+        .transpose()
+        .map_err(|_| "invalid observation cursor UUID".to_string())?;
+    let mut command = match (observed_from, observed_until) {
+        (None, None) => Command::GetInvestigation { process_instance },
+        (Some(observed_from), Some(observed_until))
+            if observed_from >= 0
+                && observed_until > observed_from
+                && observed_until <= 8_640_000_000_000_000 =>
+        {
+            Command::GetInvestigationWindow {
+                process_instance,
+                observed_from,
+                observed_until,
+            }
+        }
+        _ => return Err("invalid observation-time window".into()),
+    };
+    if paged == Some(true) {
+        if before.is_some_and(|(time, _)| !(0..=8_640_000_000_000_000).contains(&time)) {
+            return Err("invalid observation cursor".into());
+        }
+        command = Command::GetInvestigationPage {
+            process_instance,
+            observed_window: observed_from.zip(observed_until),
+            before,
+        };
+    } else if before.is_some() {
+        return Err("cursor requires paging".into());
+    }
+    match piko_ipc::call(command)
         .await
         .map_err(|error| error.to_string())?
     {
