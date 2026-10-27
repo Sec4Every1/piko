@@ -66,15 +66,25 @@ try {
     if (!$invalidQuery.result.Err) { throw 'Unbounded query accepted' }
     $verify = Invoke-Piko @{action='verify_store'}
     if ($verify.result.Ok.data.verified_events -lt 2 -or $verify.result.Ok.data.externally_anchored) { throw 'Invalid integrity report' }
-    $cli = & $cliPath health | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $cli.product -ne 'piko') { throw 'CLI roundtrip failed' }
+    # The CLI deliberately selects the installed SCM endpoint when that service
+    # is running, so it cannot validate this isolated development pipe then.
+    $installedService = Get-Service -Name piko -ErrorAction SilentlyContinue
+    $cliRoundtrip = 'passed'
+    $tests = 10
+    if ($installedService -and $installedService.Status -eq 'Running') {
+        $cliRoundtrip = 'skipped_installed_service_running'
+        $tests = 9
+    } else {
+        $cli = & $cliPath health | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $cli.product -ne 'piko') { throw 'CLI roundtrip failed' }
+    }
     # Closing clients must not close the independent backend.
     Start-Sleep -Milliseconds 2100
     $later = Invoke-Piko @{action='get_health'}
     if ($later.result.Ok.data.uptime_seconds -lt 2) { throw 'Runtime failed to continue without a client' }
     if (!$service.WaitForExit(15000)) { throw 'Runtime did not honor its bounded shutdown' }
     if ($service.ExitCode -ne 0) { throw "Runtime exit code: $($service.ExitCode)" }
-    $summary = [ordered]@{result='PASS'; tests=10; events_verified=$verify.result.Ok.data.verified_events; evidence_directory=$runDir} | ConvertTo-Json
+    $summary = [ordered]@{result='PASS'; tests=$tests; cli_roundtrip=$cliRoundtrip; events_verified=$verify.result.Ok.data.verified_events; evidence_directory=$runDir} | ConvertTo-Json
     if ($EvidenceDirectory) {
         New-Item -ItemType Directory -Path $EvidenceDirectory -Force | Out-Null
         $summary | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'ipc-smoke.json')
