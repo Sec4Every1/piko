@@ -9,8 +9,11 @@ name = "piko-service"
 path = "src/main.rs"
 
 [dependencies]
+zeroize = "1"
+piko-crypto = { version = "0.2.0", path = "../../crates/crypto" }
 piko-security-core = { version = "0.2.0", path = "../../crates/security-core" }
 piko-response-engine = { version = "0.2.0", path = "../../crates/response-engine" }
+piko-app-control = { version = "0.2.0", path = "../../crates/app-control" }
 piko-common-model = { version = "0.2.0", path = "../../crates/common-model" }
 piko-event-schema = { version = "0.2.0", path = "../../crates/event-schema" }
 piko-event-storage = { version = "0.2.0", path = "../../crates/event-storage" }

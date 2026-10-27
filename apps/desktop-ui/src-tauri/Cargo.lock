@@ -2307,6 +2307,7 @@ dependencies = [
 name = "piko-ipc"
 version = "0.2.0"
 dependencies = [
+ "piko-app-control",
  "piko-common-model",
  "piko-event-schema",
  "piko-event-storage",
@@ -2316,6 +2317,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -2342,6 +2344,7 @@ dependencies = [
  "windows",
  "windows-service",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]
@@ -4534,6 +4537,12 @@ dependencies = [
  "syn 3.0.6",
  "synstructure",
 ]
+
+[[package]]
+name = "zeroize"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
 
 [[package]]
 name = "zerotrie"
