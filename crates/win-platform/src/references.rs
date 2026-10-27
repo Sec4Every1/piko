@@ -2,7 +2,7 @@
 use std::{io, ptr};
 use windows_sys::Win32::{
     System::Com::{
-        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
     },
     UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
 };
@@ -88,10 +88,8 @@ mod tests {
             "T1685",
             "T1110",
         ] {
-            assert!(
-                attack_url(id)
-                    .is_ok_and(|url| url.starts_with("https://attack.mitre.org/techniques/"))
-            );
+            assert!(attack_url(id)
+                .is_ok_and(|url| url.starts_with("https://attack.mitre.org/techniques/")));
         }
         for value in [
             "",
@@ -103,10 +101,8 @@ mod tests {
             "T1685.005&calc",
             "T1543.003/../../",
         ] {
-            assert!(
-                open_attack_reference(value)
-                    .is_err_and(|error| error.kind() == io::ErrorKind::InvalidInput)
-            );
+            assert!(open_attack_reference(value)
+                .is_err_and(|error| error.kind() == io::ErrorKind::InvalidInput));
         }
     }
 }

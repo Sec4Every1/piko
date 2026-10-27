@@ -4,22 +4,21 @@
 use std::{
     io, mem, ptr,
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering},
-        mpsc,
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
 use windows_sys::{
+    core::GUID,
     Win32::{
         Foundation::{
             ERROR_CANCELLED, ERROR_CTX_CLOSE_PENDING, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS,
         },
         System::Diagnostics::Etw::*,
     },
-    core::GUID,
 };
 
 pub const PROVIDER_ID: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";

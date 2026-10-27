@@ -1,13 +1,13 @@
 use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, ptr};
 use tokio::net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER, GetLastError, HANDLE, LocalFree},
+    Foundation::{CloseHandle, GetLastError, LocalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE},
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         },
-        GetTokenInformation, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenSessionId,
-        TokenUser,
+        GetTokenInformation, TokenSessionId, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+        TOKEN_USER,
     },
     System::{
         Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId},
@@ -32,7 +32,7 @@ impl LocalIdentity {
 
 struct OwnedHandle(HANDLE);
 pub fn current_process_elevated() -> io::Result<bool> {
-    use windows_sys::Win32::Security::{TOKEN_ELEVATION, TokenElevation};
+    use windows_sys::Win32::Security::{TokenElevation, TOKEN_ELEVATION};
     let mut token = ptr::null_mut();
     // SAFETY: current-process pseudo handle and valid output, query-only access.
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
@@ -64,7 +64,7 @@ pub fn current_process_elevated() -> io::Result<bool> {
 /// no operation is performed using that token.
 pub fn authorize_response_client(pipe: &NamedPipeServer) -> io::Result<LocalIdentity> {
     use windows_sys::Win32::{
-        Security::{RevertToSelf, TOKEN_ELEVATION, TokenElevation},
+        Security::{RevertToSelf, TokenElevation, TOKEN_ELEVATION},
         System::{
             Pipes::ImpersonateNamedPipeClient,
             Threading::{GetCurrentThread, OpenThreadToken},

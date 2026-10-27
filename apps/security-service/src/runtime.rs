@@ -914,9 +914,7 @@ async fn serve(
     let deadline = Instant::now()
         + if matches!(&request.command, Command::VerifyStore) {
             Duration::from_secs(30)
-        } else if request.command.is_response_command()
-            || request.command.is_key_command()
-        {
+        } else if request.command.is_response_command() || request.command.is_key_command() {
             Duration::from_millis(2200)
         } else {
             REQUEST_DEADLINE

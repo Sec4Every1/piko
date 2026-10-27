@@ -3,19 +3,19 @@
 //! Call mutations only after application identity and user intent are verified.
 use std::{collections::HashSet, io, marker::PhantomData, rc::Rc};
 use windows::{
+    core::{IUnknown, Interface, BSTR},
     Win32::{
         Foundation::{RPC_E_CHANGED_MODE, VARIANT_FALSE, VARIANT_TRUE},
         NetworkManagement::WindowsFirewall::*,
         System::{
             Com::{
-                CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-                CoUninitialize, IDispatch,
+                CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch, CLSCTX_INPROC_SERVER,
+                COINIT_MULTITHREADED,
             },
             Ole::IEnumVARIANT,
             Variant::{VARIANT, VT_DISPATCH, VT_UNKNOWN},
         },
     },
-    core::{BSTR, IUnknown, Interface},
 };
 
 pub const RULE_GROUP: &str = "piko network control";
@@ -589,14 +589,12 @@ mod tests {
         assert!(
             matching_rule(std::slice::from_ref(&valid), &valid.name, &valid.executable)?.is_some()
         );
-        assert!(
-            matching_rule(
-                &[valid.clone(), valid.clone()],
-                &valid.name,
-                &valid.executable
-            )
-            .is_err()
-        );
+        assert!(matching_rule(
+            &[valid.clone(), valid.clone()],
+            &valid.name,
+            &valid.executable
+        )
+        .is_err());
         for field in 0..6 {
             let mut modified = valid.clone();
             match field {

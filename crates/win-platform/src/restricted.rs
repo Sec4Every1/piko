@@ -3,20 +3,20 @@
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io, mem, os::windows::io::AsRawHandle, path::Path, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE, LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT},
+    Foundation::{CloseHandle, LocalFree, ERROR_SUCCESS, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            SDDL_REVISION_1, SE_FILE_OBJECT, SetSecurityInfo,
+            SetSecurityInfo, SDDL_REVISION_1, SE_FILE_OBJECT,
         },
-        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, FreeSid,
-        GetSecurityDescriptorDacl, GetTokenInformation,
+        CreateWellKnownSid, EqualSid, FreeSid, GetSecurityDescriptorDacl, GetTokenInformation,
         Isolation::{
             CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
         },
+        TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer,
+        WinCapabilityInternetClientSid, DACL_SECURITY_INFORMATION,
         PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
-        TOKEN_GROUPS, TOKEN_QUERY, TokenAppContainerSid, TokenCapabilities, TokenIsAppContainer,
-        WinCapabilityInternetClientSid,
+        TOKEN_GROUPS, TOKEN_QUERY,
     },
     System::{Com::CoTaskMemFree, JobObjects::*, Threading::*},
     UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},

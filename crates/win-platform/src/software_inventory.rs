@@ -4,9 +4,10 @@ use std::{io, ptr};
 use windows_sys::Win32::{
     Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS},
     System::Registry::{
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_ENUMERATE_SUB_KEYS, KEY_QUERY_VALUE,
-        KEY_WOW64_32KEY, KEY_WOW64_64KEY, REG_SAM_FLAGS, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ,
-        RRF_RT_REG_SZ, RRF_ZEROONFAILURE, RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
+        RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER,
+        HKEY_LOCAL_MACHINE, KEY_ENUMERATE_SUB_KEYS, KEY_QUERY_VALUE, KEY_WOW64_32KEY,
+        KEY_WOW64_64KEY, REG_SAM_FLAGS, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
+        RRF_ZEROONFAILURE,
     },
 };
 
@@ -418,12 +419,10 @@ mod tests {
         }
         assert!(!snapshot.complete);
         assert_eq!(snapshot.warnings.len(), MAX_WARNINGS);
-        assert!(
-            snapshot
-                .warnings
-                .last()
-                .is_some_and(|warning| warning.contains("omitted"))
-        );
+        assert!(snapshot
+            .warnings
+            .last()
+            .is_some_and(|warning| warning.contains("omitted")));
         snapshot.truncate("Metadata budget exceeded".into());
         assert!(snapshot.truncated);
     }
@@ -455,12 +454,10 @@ mod tests {
             )));
         }
         let machine_only = inventory(false)?;
-        assert!(
-            machine_only
-                .entries
-                .iter()
-                .all(|entry| entry.scope == "machine")
-        );
+        assert!(machine_only
+            .entries
+            .iter()
+            .all(|entry| entry.scope == "machine"));
         Ok(())
     }
 }
