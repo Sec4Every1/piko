@@ -16,12 +16,12 @@ use windows_sys::Win32::{
     },
     System::{
         Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
             TH32CS_SNAPPROCESS,
         },
         Threading::{
-            GetProcessTimes, OpenProcess, QueryFullProcessImageNameW,
-            PROCESS_QUERY_LIMITED_INFORMATION,
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            QueryFullProcessImageNameW,
         },
     },
 };

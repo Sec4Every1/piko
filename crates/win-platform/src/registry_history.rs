@@ -6,9 +6,9 @@ use windows_sys::Win32::{
         ERROR_SUCCESS, FILETIME,
     },
     System::Registry::{
-        RegCloseKey, RegEnumValueW, RegOpenKeyExW, RegQueryInfoKeyW, HKEY, HKEY_CURRENT_USER,
-        HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_WOW64_32KEY, KEY_WOW64_64KEY, REG_EXPAND_SZ,
-        REG_SZ,
+        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_WOW64_32KEY,
+        KEY_WOW64_64KEY, REG_EXPAND_SZ, REG_SZ, RegCloseKey, RegEnumValueW, RegOpenKeyExW,
+        RegQueryInfoKeyW,
     },
 };
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

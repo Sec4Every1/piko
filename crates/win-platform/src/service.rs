@@ -179,7 +179,7 @@ pub fn installed_service_pid() -> io::Result<Option<u32>> {
     let service = match manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS) {
         Ok(service) => service,
         Err(windows_service::Error::Winapi(error)) if error.raw_os_error() == Some(1060) => {
-            return Ok(None)
+            return Ok(None);
         }
         Err(error) => return Err(io::Error::other(error)),
     };

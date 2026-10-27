@@ -3,8 +3,8 @@ use std::{io, ptr};
 use windows_sys::Win32::{
     Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS},
     System::Registry::{
-        RegCloseKey, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
-        HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SZ, RRF_NOEXPAND, RRF_RT_REG_SZ,
+        HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SZ, RRF_NOEXPAND,
+        RRF_RT_REG_SZ, RegCloseKey, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
     },
 };
 const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -149,11 +149,13 @@ mod tests {
         );
         assert!(command(std::path::Path::new("relative.exe")).is_err());
         assert!(command(std::path::Path::new(r"C:\bad%path\piko.exe")).is_err());
-        assert!(command(std::path::Path::new(&format!(
-            "C:\\{}.exe",
-            "x".repeat(260)
-        )))
-        .is_err());
+        assert!(
+            command(std::path::Path::new(&format!(
+                "C:\\{}.exe",
+                "x".repeat(260)
+            )))
+            .is_err()
+        );
         Ok(())
     }
 }

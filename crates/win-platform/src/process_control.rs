@@ -3,9 +3,9 @@ use std::{io, path::Path};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, FILETIME, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
     System::Threading::{
-        GetProcessTimes, IsProcessCritical, OpenProcess, QueryFullProcessImageNameW,
-        TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+        GetProcessTimes, IsProcessCritical, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, QueryFullProcessImageNameW, TerminateProcess,
+        WaitForSingleObject,
     },
 };
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

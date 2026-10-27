@@ -4,21 +4,22 @@
 use std::{
     io, mem, ptr,
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc,
     },
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
 use windows_sys::{
-    core::GUID,
     Win32::{
         Foundation::{
             ERROR_CANCELLED, ERROR_CTX_CLOSE_PENDING, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS,
         },
         System::Diagnostics::Etw::*,
     },
+    core::GUID,
 };
 
 pub const PROVIDER_ID: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
@@ -1040,7 +1041,10 @@ mod tests {
         while std::time::Instant::now() < deadline {
             if let Some(record) = session.poll(Duration::from_millis(200))? {
                 if record.event_id == 1 && record.fields.process_id == Some(pid) {
-                    println!("Native child start captured via TDH: PID {pid}, version {}, creation {:?}, image {:?}", record.version, record.fields.creation_filetime, record.fields.image_name);
+                    println!(
+                        "Native child start captured via TDH: PID {pid}, version {}, creation {:?}, image {:?}",
+                        record.version, record.fields.creation_filetime, record.fields.image_name
+                    );
                     assert!(record.decode_error.is_none());
                     assert!(record.fields.creation_filetime.is_some());
                     assert!(record.fields.image_name.is_some());
