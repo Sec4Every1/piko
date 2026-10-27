@@ -1,12 +1,27 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 
 use piko_event_schema::EventRecord;
-use piko_event_storage::{SqliteEventStore, StorageConfig, StorageError};
+use piko_event_storage::{ArchiveMaintenanceStatus, SqliteEventStore, StorageConfig, StorageError};
 use piko_ipc::{ApiData, ApiError, Command};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 const STORAGE_QUEUE_CAPACITY: usize = 8;
+fn bounded_detail(mut detail: String) -> String {
+    let mut end = detail.len().min(2048);
+    while !detail.is_char_boundary(end) {
+        end -= 1;
+    }
+    detail.truncate(end);
+    detail
+}
 struct VerificationJob {
     deadline: Instant,
     reply: oneshot::Sender<Result<ApiData, ApiError>>,
@@ -14,6 +29,7 @@ struct VerificationJob {
 pub type AppendResult = Result<u64, String>;
 
 enum Job {
+    Maintain,
     Append {
         batch: Vec<EventRecord>,
         reply: oneshot::Sender<AppendResult>,
@@ -67,16 +83,35 @@ pub struct StorageClient {
     sender: mpsc::Sender<Job>,
     verifier: mpsc::Sender<VerificationJob>,
     archive: tokio::sync::watch::Receiver<ArchiveTelemetry>,
+    maintenance: tokio::sync::watch::Receiver<ArchiveMaintenanceStatus>,
+    maintenance_queued: Arc<AtomicBool>,
 }
 
 impl StorageClient {
+    #[cfg(test)]
     pub async fn start(
         path: PathBuf,
         config: StorageConfig,
     ) -> Result<(Self, Uuid, u64, std::collections::HashMap<String, String>), String> {
+        Self::start_with_maintenance(path, config, false).await
+    }
+
+    pub async fn start_with_maintenance(
+        path: PathBuf,
+        config: StorageConfig,
+        enabled: bool,
+    ) -> Result<(Self, Uuid, u64, std::collections::HashMap<String, String>), String> {
         let (sender, mut receiver) = mpsc::channel(STORAGE_QUEUE_CAPACITY);
         let (ready_sender, ready_receiver) = oneshot::channel();
         let (archive_sender, archive) = tokio::sync::watch::channel(ArchiveTelemetry::default());
+        let (maintenance_sender, maintenance) =
+            tokio::sync::watch::channel(ArchiveMaintenanceStatus {
+                enabled,
+                state: "waiting".into(),
+                ..Default::default()
+            });
+        let maintenance_queued = Arc::new(AtomicBool::new(false));
+        let worker_maintenance_queued = maintenance_queued.clone();
         let budget = config.max_disk_bytes;
         let verification_path = path.clone();
         let verification_config = config.clone();
@@ -148,8 +183,62 @@ impl StorageClient {
                 {
                     return;
                 }
+                // Cursor is intentionally local: a restart safely rescans preserved rows.
+                let mut maintenance_cursor = 0;
                 while let Some(job) = receiver.blocking_recv() {
                     match job {
+                        Job::Maintain => {
+                            // A maintenance request yields to already queued collection/read work.
+                            if !receiver.is_empty() {
+                                let mut status = maintenance_sender.borrow().clone();
+                                status.state = "waiting".into();
+                                status.detail =
+                                    Some("waiting for the storage queue to become idle".into());
+                                maintenance_sender.send_replace(status);
+                                worker_maintenance_queued.store(false, Ordering::Release);
+                                continue;
+                            }
+                            maintenance_sender.send_replace(ArchiveMaintenanceStatus {
+                                enabled,
+                                state: "running".into(),
+                                ..Default::default()
+                            });
+                            // Use the append writer and its original protection identity only.
+                            let result = store
+                                .set_operation_deadline(None)
+                                .and_then(|()| store.maintain_archive_batch(maintenance_cursor));
+                            let sampled_at_unix_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .ok()
+                                .and_then(|time| i64::try_from(time.as_millis()).ok());
+                            let status = match result {
+                                Ok((next_cursor, scanned, changed, logical_bytes_saved)) => {
+                                    let cycle_complete = scanned == 0;
+                                    maintenance_cursor =
+                                        if cycle_complete { 0 } else { next_cursor };
+                                    ArchiveMaintenanceStatus {
+                                        enabled,
+                                        state: "completed_batch".into(),
+                                        sampled_at_unix_ms,
+                                        scanned,
+                                        changed,
+                                        logical_bytes_saved,
+                                        cycle_complete,
+                                        detail: None,
+                                    }
+                                }
+                                Err(error) => ArchiveMaintenanceStatus {
+                                    enabled,
+                                    state: "blocked".into(),
+                                    sampled_at_unix_ms,
+                                    detail: Some(bounded_detail(error.to_string())),
+                                    ..Default::default()
+                                },
+                            };
+                            archive_sender.send_replace(archive_sample(&store, budget));
+                            maintenance_sender.send_replace(status);
+                            worker_maintenance_queued.store(false, Ordering::Release);
+                        }
                         Job::Append { batch, reply } => {
                             if let Err(error) = store.set_operation_deadline(None) {
                                 let _ = reply.send(Err(error.to_string()));
@@ -281,6 +370,8 @@ impl StorageClient {
                 sender,
                 verifier,
                 archive,
+                maintenance,
+                maintenance_queued,
             },
             host_id,
             count,
@@ -290,6 +381,39 @@ impl StorageClient {
 
     pub fn archive_metrics(&self) -> ArchiveTelemetry {
         self.archive.borrow().clone()
+    }
+
+    pub fn maintenance_status(&self) -> ArchiveMaintenanceStatus {
+        let mut status = self.maintenance.borrow().clone();
+        if self.maintenance.has_changed().is_err() {
+            status.state = "blocked".into();
+            status.sampled_at_unix_ms = None;
+            status.scanned = 0;
+            status.changed = 0;
+            status.logical_bytes_saved = 0;
+            status.cycle_complete = false;
+            status.detail = Some(
+                "storage worker is unavailable; cached maintenance outcome is not current".into(),
+            );
+        }
+        status
+    }
+
+    pub fn try_maintain(&self) -> Result<(), String> {
+        if !self.maintenance.borrow().enabled {
+            return Ok(());
+        }
+        if self.maintenance_queued.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        if let Err(error) = self.sender.try_send(Job::Maintain) {
+            self.maintenance_queued.store(false, Ordering::Release);
+            return Err(match error {
+                mpsc::error::TrySendError::Full(_) => "storage worker queue is full".into(),
+                mpsc::error::TrySendError::Closed(_) => "storage worker is unavailable".into(),
+            });
+        }
+        Ok(())
     }
 
     pub fn try_append(
@@ -433,6 +557,7 @@ pub fn api_error(code: &str, message: &str) -> ApiError {
 
 fn storage_error(error: StorageError) -> ApiError {
     let code = match &error {
+        StorageError::ProtectionPolicy(_) => "evidence_protection_unavailable",
         StorageError::InvalidQuery => "invalid_query",
         StorageError::QuerySyntax(_) => "query_syntax",
         StorageError::QueryResultTooLarge => "query_result_too_large",
@@ -440,7 +565,6 @@ fn storage_error(error: StorageError) -> ApiError {
             "evidence_corrupt"
         }
         StorageError::DiskBudgetExceeded => "disk_budget_exhausted",
-        StorageError::ProtectionPolicy(_) => "evidence_protection_unavailable",
         _ => "storage_error",
     };
     api_error(code, &error.to_string())
@@ -460,6 +584,8 @@ mod tests {
             sender,
             verifier,
             archive,
+            maintenance: tokio::sync::watch::channel(ArchiveMaintenanceStatus::default()).1,
+            maintenance_queued: Arc::new(AtomicBool::new(false)),
         };
         let first = client.try_append(Vec::new())?;
         assert!(client.try_append(Vec::new()).is_err());
@@ -482,6 +608,8 @@ mod tests {
                 sender,
                 verifier,
                 archive,
+                maintenance: tokio::sync::watch::channel(ArchiveMaintenanceStatus::default()).1,
+                maintenance_queued: Arc::new(AtomicBool::new(false)),
             };
             let error = client
                 .read(
@@ -507,6 +635,8 @@ mod tests {
                 sender,
                 verifier,
                 archive,
+                maintenance: tokio::sync::watch::channel(ArchiveMaintenanceStatus::default()).1,
+                maintenance_queued: Arc::new(AtomicBool::new(false)),
             };
             let append = client.try_append(Vec::new())?;
             let call = client.read(
@@ -674,3 +804,6 @@ async fn calendar_retention_runs_before_append_and_reports_retained_count(
 
 #[cfg(test)]
 mod history_tests;
+
+#[cfg(test)]
+mod maintenance_tests;

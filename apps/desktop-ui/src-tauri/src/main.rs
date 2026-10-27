@@ -125,6 +125,18 @@ async fn verify_store() -> Result<IntegrityReport, String> {
     }
 }
 
+#[tauri::command]
+async fn archive_maintenance_status() -> Result<piko_event_storage::ArchiveMaintenanceStatus, String>
+{
+    match piko_ipc::call(Command::GetArchiveMaintenance)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        ApiData::ArchiveMaintenance(status) => Ok(status),
+        _ => Err("unexpected IPC response type".into()),
+    }
+}
+
 fn main() -> std::process::ExitCode {
     if std::env::args_os()
         .skip(1)
@@ -177,6 +189,7 @@ fn main() -> std::process::ExitCode {
             authentication_activity,
             list_events,
             verify_store,
+            archive_maintenance_status,
             get_evidence,
             list_alerts,
             response_status,

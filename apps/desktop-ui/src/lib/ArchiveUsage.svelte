@@ -1,9 +1,11 @@
 <script lang="ts">
+import ArchiveMaintenance from './ArchiveMaintenance.svelte';
 import {onMount} from 'svelte';import type {HealthSnapshot} from './api';import type {Language} from './i18n';import {formatTime} from './format';
 let {health,connected,language}:{health:HealthSnapshot|null;connected:boolean;language:Language}=$props();const it=$derived(language==='it');let now=$state(Date.now());onMount(()=>{const timer=setInterval(()=>now=Date.now(),1000);return()=>clearInterval(timer);});
 const usage=$derived(connected?health?.archive:null);const stale=$derived(!!usage && (now-usage.sampled_at_unix_ms>15000||usage.sampled_at_unix_ms>now+5000));const used=$derived(usage?.database_active_bytes??usage?.database_bytes??0);const pressure=$derived(!!usage && used>=usage.database_limit_bytes*0.9);const blocked=$derived(connected && health?.sensors.some(s=>s.id==='piko.storage' && s.state==='degraded'));const mib=(bytes:number)=>(bytes/1048576).toLocaleString(language,{maximumFractionDigits:1})+' MiB';
 </script>
 <section class="panel archive-panel"><div class="panel-heading"><div><h2>{it?'Capacità archivio':'Archive capacity'}</h2><p>{it?'Database e spazio riservato al registro transazioni':'Database and space reserved for the transaction log'}</p></div></div>
+<ArchiveMaintenance {connected} {language}/>
 {#if !usage}
 <p class="notice">{it?'Occupazione non disponibile: non significa che l’archivio sia vuoto.':'Usage unavailable: this does not mean the archive is empty.'} {health?.archive_error??''}</p>{:else}
 {#if stale}<p class="warning">{it?'Campione non aggiornato.':'Sample is stale.'}</p>{/if}

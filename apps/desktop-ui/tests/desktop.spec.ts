@@ -432,7 +432,7 @@ test('manual review moves only one occurrence and can reopen it',async({page})=>
 test('archive pressure exposes the effective database cap and explicit retention policy',async({page})=>{
  await installBridge(page);
  await page.addInitScript(()=>{const bridge=(window as unknown as {__TAURI_INTERNALS__:{invoke:(command:string,args?:Record<string,unknown>)=>Promise<unknown>}}).__TAURI_INTERNALS__;const original=bridge.invoke;bridge.invoke=async(command,args)=>{const v=await original(command,args);return command==='get_health'?{...(v as object),archive:{sampled_at_unix_ms:Date.now(),budget_bytes:268435456,database_limit_bytes:134217728,database_bytes:134217728,total_bytes:135266304},sensors:[{id:'piko.storage',state:'degraded',detail:'database or disk is full',last_seen_unix_ms:null}]}:v;};});
- await page.goto('/');await page.locator('.sidebar nav').getByRole('button',{name:'Impostazioni',exact:true}).click();const panel=page.locator('.archive-panel');await expect(panel.getByRole('heading',{name:'Capacità archivio'})).toBeVisible();await expect(panel.getByText('128 MiB / 128 MiB',{exact:true})).toBeVisible();await expect(panel.getByRole('status')).toContainText('Scritture sospese');await expect(panel).toContainText('Conservazione automatica disattivata.');await expect(panel).toContainText('Il limite di spazio non accorcia il periodo di conservazione');
+ await page.goto('/');await page.locator('.sidebar nav').getByRole('button',{name:'Impostazioni',exact:true}).click();const panel=page.locator('.archive-panel');await expect(panel.getByRole('heading',{name:'Capacità archivio'})).toBeVisible();await expect(panel.getByText('128 MiB / 128 MiB',{exact:true})).toBeVisible();await expect(panel.getByRole('status').filter({hasText:'Scritture sospese'})).toContainText('Scritture sospese');await expect(panel).toContainText('Conservazione automatica disattivata.');await expect(panel).toContainText('Il limite di spazio non accorcia il periodo di conservazione');
 });
 
 test('full internal database is distinguished from unused aggregate archive capacity',async({page})=>{
@@ -448,8 +448,8 @@ test('full internal database is distinguished from unused aggregate archive capa
  await page.goto('/');
  await page.locator('.sidebar nav').getByRole('button',{name:'Impostazioni',exact:true}).click();
  const panel=page.locator('.archive-panel');
- await expect(panel.getByRole('status')).toContainText('limite interno del database');
- await expect(panel.getByRole('status')).toContainText('budget complessivo non è esaurito');
+ await expect(panel.getByText(/limite interno del database/)).toBeVisible();
+ await expect(panel.getByText(/budget complessivo non è esaurito/)).toBeVisible();
  await expect(panel).toContainText('2048 MiB');
  await expect(panel).toContainText('Conservazione: 12 mesi. Eventi scaduti: 0.');
 });
@@ -457,4 +457,59 @@ test('full internal database is distinguished from unused aggregate archive capa
 test('failed-logon bursts name the attempted account and expose bounded original records',async({page})=>{
  await installBridge(page);await page.goto('/');await page.evaluate(()=>{const base=window.__PIKO_TEST__.alerts[0];const uuid=(i:number)=>'00000000-0000-0000-0000-'+i.toString(16).padStart(12,'0');window.__PIKO_TEST__.alerts=[{...base,id:'test-logon',rule_id:'failed-logon-burst',severity:'medium',assessment:{...base.assessment!,risk_score:50,factors:[{code:'repeated_bad_credentials',points:50}],context:{...base.assessment!.context,target_user:'alice',target_domain:'PC',source_ip:'192.0.2.10',logon_type:'10',failed_logons:{bucket_start:1791885600000,bucket_end:1791885660000,count:6,records:Array.from({length:6},(_,i)=>({event_id:uuid(i+1),evidence_id:uuid(i+100),event_time:1791885605000}))}}}}];});
  await page.getByRole('button',{name:'Aggiorna',exact:true}).click();await page.locator('[data-group-rule="failed-logon-burst"]').click();await expect(page.getByRole('heading',{name:'Accessi falliti ripetuti · PC\\alice',exact:true})).toBeVisible();await expect(page.getByTestId('risk-score')).toHaveText('50/100');await page.locator('.authentication-evidence > summary').click();const panel=page.locator('.authentication-evidence');await expect(panel.locator('.record')).toHaveCount(5);await panel.getByRole('button',{name:'Apri XML',exact:true}).first().click();await expect(panel.locator('pre')).toContainText('<Event');await panel.getByRole('button',{name:'Successive',exact:true}).click();await expect(panel.locator('.record')).toHaveCount(1);
+});
+
+
+test('archive maintenance reports logical reduction and exposes a blocked refresh', async ({ page }) => {
+  await installBridge(page);
+  await page.addInitScript(() => {
+    const bridge = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const original = bridge.invoke;
+    let maintenanceReads = 0;
+    bridge.invoke = async (command, args) => {
+      if (command !== 'archive_maintenance_status') return original(command, args);
+      maintenanceReads++;
+      return maintenanceReads === 1
+        ? { enabled: true, state: 'completed_batch', sampled_at_unix_ms: Date.now(), scanned: 8,
+          changed: 3, logical_bytes_saved: 2048, cycle_complete: false, detail: null }
+        : { enabled: true, state: 'blocked', sampled_at_unix_ms: Date.now(), scanned: 0,
+          changed: 0, logical_bytes_saved: 0, cycle_complete: false, detail: 'Synthetic archive budget exhausted' };
+    };
+  });
+  await page.goto('/');
+  await nav(page, 'Impostazioni').click();
+  const maintenance = page.locator('.archive-panel .maintenance');
+  await expect(maintenance.getByRole('status')).toHaveText('Ultimo lotto completato');
+  await expect(maintenance).toContainText('3 evidenze compresse su 8 esaminate.');
+  await expect(maintenance).toContainText('2 KiB.');
+  await expect(maintenance).toContainText('Non equivale a spazio liberato sul disco.');
+  await maintenance.getByRole('button', { name: 'Aggiorna stato', exact: true }).click();
+  await expect(maintenance.getByRole('status')).toHaveText('In pausa');
+  await expect(maintenance).not.toContainText('3 evidenze compresse');
+  await maintenance.getByText('Dettagli manutenzione', { exact: true }).click();
+  await expect(maintenance.locator('pre')).toHaveText('Synthetic archive budget exhausted');
+});
+
+test('unavailable archive maintenance stays unknown and allows another refresh', async ({ page }) => {
+  await installBridge(page);
+  await page.addInitScript(() => {
+    const bridge = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const original = bridge.invoke;
+    bridge.invoke = async (command, args) => {
+      if (command === 'archive_maintenance_status') throw new Error('Synthetic maintenance unavailable');
+      return original(command, args);
+    };
+  });
+  await page.goto('/');
+  await nav(page, 'Impostazioni').click();
+  const maintenance = page.locator('.archive-panel .maintenance');
+  await expect(maintenance.getByRole('status')).toHaveText('Non disponibile');
+  await expect(maintenance).toContainText('Stato non disponibile: non conferma che la manutenzione funzioni.');
+  const refresh = maintenance.getByRole('button', { name: 'Aggiorna stato', exact: true });
+  await expect(refresh).toBeEnabled();
+  await refresh.click();
+  await expect(maintenance.getByRole('status')).toHaveText('Non disponibile');
+  await expect(refresh).toBeEnabled();
+  await maintenance.getByText('Dettagli manutenzione', { exact: true }).click();
+  await expect(maintenance.locator('pre')).toContainText('Synthetic maintenance unavailable');
 });

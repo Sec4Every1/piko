@@ -162,6 +162,7 @@ struct Config {
     viewer_sid: Option<String>,
     response_roots: Option<Vec<PathBuf>>,
     retention_months: Option<u8>,
+    archive_maintenance: bool,
 }
 
 impl Default for Config {
@@ -175,6 +176,7 @@ impl Default for Config {
             viewer_sid: None,
             response_roots: None,
             retention_months: None,
+            archive_maintenance: true,
         }
     }
 }
@@ -534,13 +536,14 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
         None
     };
     let mut listener = create_listener(&identity, viewer.as_deref(), true)?;
-    let (storage, host_id, stored_events, checkpoints) = StorageClient::start(
+    let (storage, host_id, stored_events, checkpoints) = StorageClient::start_with_maintenance(
         config.data_dir.join("events.db"),
         StorageConfig {
             max_disk_bytes: config.max_disk_mib * 1024 * 1024,
             retention_months: config.retention_months,
             ..StorageConfig::default()
         },
+        config.archive_maintenance,
     )
     .await
     .map_err(io::Error::other)?;
@@ -647,7 +650,11 @@ pub async fn run(mut service: Option<ServiceContext>) -> Result<(), Box<dyn Erro
                 state.last_seen = Some(i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?);
                 state.report_loss()?;
             }
-            _ = flush.tick() => state.begin_flush(),
+            _ = flush.tick() => {
+                state.begin_flush();
+                // A full queue retries at the next tick; collection has priority.
+                let _ = state.storage.try_maintain();
+            },
             changed = source_changes.changed() => {
                 if changed.is_err() { return Err("Event Log health channel stopped".into()); }
                 let snapshot = source_changes.borrow_and_update().clone();
@@ -874,6 +881,9 @@ async fn serve(
                         )
                     }),
                 Command::GetHealth => Ok(ApiData::Health(health.borrow().clone())),
+                Command::GetArchiveMaintenance => {
+                    Ok(ApiData::ArchiveMaintenance(storage.maintenance_status()))
+                }
                 command if command.is_response_command() => {
                     response.call(command, deadline, actor).await
                 }

@@ -43,6 +43,7 @@ pub enum Command {
         expected_sha256: String,
     },
     GetHealth,
+    GetArchiveMaintenance,
     GetObservations,
     GetInvestigation {
         process_instance: uuid::Uuid,
@@ -86,6 +87,7 @@ pub enum ApiData {
     ResponseStatus(piko_security_core::ResponseStatus),
     Action(piko_security_core::Action),
     Health(HealthSnapshot),
+    ArchiveMaintenance(piko_event_storage::ArchiveMaintenanceStatus),
     Observations(piko_common_model::ObservationSnapshot),
     Investigation(piko_security_core::Investigation),
     Events(Vec<SecurityEvent>),
