@@ -47,6 +47,16 @@ pub enum Command {
     GetInvestigation {
         process_instance: uuid::Uuid,
     },
+    GetInvestigationWindow {
+        process_instance: uuid::Uuid,
+        observed_from: i64,
+        observed_until: i64,
+    },
+    GetInvestigationPage {
+        process_instance: uuid::Uuid,
+        observed_window: Option<(i64, i64)>,
+        before: Option<(i64, uuid::Uuid)>,
+    },
     ListEvents(EventQuery),
     GetAuthenticationActivity(piko_event_storage::AuthenticationQuery),
     VerifyStore,

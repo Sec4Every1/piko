@@ -151,20 +151,42 @@ impl StorageClient {
                 while let Some(job) = receiver.blocking_recv() {
                     match job {
                         Job::Append { batch, reply } => {
-                            if let Err(error)=store.set_operation_deadline(None) {let _=reply.send(Err(error.to_string()));continue;}
-                            if let Some(months)=store.retention_months() {
-                                let maintenance=(||->Result<(),StorageError>{
-                                    let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_|StorageError::Configuration)?.as_millis();
-                                    let cutoff=piko_event_storage::calendar_cutoff(i64::try_from(now).map_err(|_|StorageError::Configuration)?,months)?;
-                                    for _ in 0..4 {if store.expire_before(cutoff)?==0 {break;}}
+                            if let Err(error) = store.set_operation_deadline(None) {
+                                let _ = reply.send(Err(error.to_string()));
+                                continue;
+                            }
+                            if let Some(months) = store.retention_months() {
+                                let maintenance = (|| -> Result<(), StorageError> {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map_err(|_| StorageError::Configuration)?
+                                        .as_millis();
+                                    let cutoff = piko_event_storage::calendar_cutoff(
+                                        i64::try_from(now)
+                                            .map_err(|_| StorageError::Configuration)?,
+                                        months,
+                                    )?;
+                                    for _ in 0..4 {
+                                        if store.expire_before(cutoff)? == 0 {
+                                            break;
+                                        }
+                                    }
                                     Ok(())
                                 })();
-                                if let Err(error)=maintenance {archive_sender.send_replace(archive_sample(&store,budget));let _=reply.send(Err(error.to_string()));continue;}
+                                if let Err(error) = maintenance {
+                                    archive_sender.send_replace(archive_sample(&store, budget));
+                                    let _ = reply.send(Err(error.to_string()));
+                                    continue;
+                                }
                             }
                             let result = store
                                 .append_records(&batch)
                                 .and_then(|()| {
-                                    stored_count = if store.retention_months().is_some() {store.count()?} else {stored_count.saturating_add(batch.len() as u64)};
+                                    stored_count = if store.retention_months().is_some() {
+                                        store.count()?
+                                    } else {
+                                        stored_count.saturating_add(batch.len() as u64)
+                                    };
                                     Ok(stored_count)
                                 })
                                 .map_err(|error| error.to_string());
@@ -187,7 +209,10 @@ impl StorageClient {
                                 )));
                                 continue;
                             }
-                            if let Err(error)=store.set_operation_deadline(Some(deadline)) {let _=reply.send(Err(storage_error(error)));continue;}
+                            if let Err(error) = store.set_operation_deadline(Some(deadline)) {
+                                let _ = reply.send(Err(storage_error(error)));
+                                continue;
+                            }
                             let result = match command {
                                 Command::ListAlerts => store.alerts().map(ApiData::Alerts),
                                 Command::GetEvidence { evidence_id } => {
@@ -196,17 +221,36 @@ impl StorageClient {
                                 Command::ListEvents(query) => {
                                     store.query(&query).map(ApiData::Events)
                                 }
-                                Command::GetAuthenticationActivity(query) => store.authentication_activity(&query).map(ApiData::AuthenticationActivity),
+                                Command::GetAuthenticationActivity(query) => store
+                                    .authentication_activity(&query)
+                                    .map(ApiData::AuthenticationActivity),
                                 Command::GetInvestigation { process_instance } => {
-                                    let cap = piko_security_core::MAX_INVESTIGATION_EVENTS;
-                                    store.query(&piko_event_storage::EventQuery {
-                                        expression: Some(format!("process.instance = \"{process_instance}\" AND sensor.id = \"windows.observations\" AND (event.type = \"process.snapshot.observed\" OR event.type = \"process.snapshot.changed\" OR event.type = \"network.snapshot.observed\" OR event.type = \"network.snapshot.changed\")")),
-                                        limit: cap + 1,
-                                        ..Default::default()
-                                    }).map(|events| ApiData::Investigation(piko_security_core::investigate(process_instance, &events, events.len() > cap)))
+                                    investigation_query(&store, process_instance, None)
                                 }
+                                Command::GetInvestigationWindow {
+                                    process_instance,
+                                    observed_from,
+                                    observed_until,
+                                } => investigation_query(
+                                    &store,
+                                    process_instance,
+                                    Some((observed_from, observed_until)),
+                                ),
+                                Command::GetInvestigationPage {
+                                    process_instance,
+                                    observed_window,
+                                    before,
+                                } => investigation_page(
+                                    &store,
+                                    process_instance,
+                                    observed_window,
+                                    before,
+                                ),
                                 _ => {
-                                    if let Err(error)=store.set_operation_deadline(None) {let _=reply.send(Err(storage_error(error)));continue;}
+                                    if let Err(error) = store.set_operation_deadline(None) {
+                                        let _ = reply.send(Err(storage_error(error)));
+                                        continue;
+                                    }
                                     let _ = reply.send(Err(api_error(
                                         "invalid_command",
                                         "command uses a dedicated worker or runtime cache",
@@ -214,7 +258,7 @@ impl StorageClient {
                                     continue;
                                 }
                             };
-                            let result=store.set_operation_deadline(None).and(result);
+                            let result = store.set_operation_deadline(None).and(result);
                             let result = if Instant::now() >= deadline {
                                 Err(api_error(
                                     "request_timeout",
@@ -304,6 +348,80 @@ impl StorageClient {
                 )
             })?
     }
+}
+
+fn investigation_query(
+    store: &SqliteEventStore,
+    process_instance: Uuid,
+    observed_window: Option<(i64, i64)>,
+) -> Result<ApiData, StorageError> {
+    let expression = investigation_expression(process_instance, observed_window)?;
+    let cap = piko_security_core::MAX_INVESTIGATION_EVENTS;
+    store
+        .query(&piko_event_storage::EventQuery {
+            expression: Some(expression),
+            limit: cap + 1,
+            ..Default::default()
+        })
+        .map(|events| {
+            ApiData::Investigation(piko_security_core::investigate(
+                process_instance,
+                &events,
+                events.len() > cap,
+            ))
+        })
+}
+
+fn investigation_page(
+    store: &SqliteEventStore,
+    process_instance: Uuid,
+    window: Option<(i64, i64)>,
+    before: Option<(i64, Uuid)>,
+) -> Result<ApiData, StorageError> {
+    if before.is_some_and(|(time, _)| {
+        !(0..=8_640_000_000_000_000).contains(&time)
+            || window.is_some_and(|(from, until)| time < from || time >= until)
+    }) {
+        return Err(StorageError::InvalidQuery);
+    }
+    let expression = investigation_expression(process_instance, window)?;
+    let mut events = store.observation_page(&expression, before)?;
+    let more = events.len() > 128;
+    events.truncate(128);
+    // Advance using the last queried event, even when admission rejects it.
+    // Never skip the 129th lookahead row or infer a cursor from display sorting.
+    let cursor = if more {
+        events.last().map(|e| (e.observation_time, e.event_id))
+    } else {
+        None
+    };
+    let mut graph = piko_security_core::investigate(process_instance, &events, more);
+    graph.observation_paging_available = true;
+    graph.next_observation_cursor = cursor;
+    Ok(ApiData::Investigation(graph))
+}
+
+fn investigation_expression(
+    process_instance: Uuid,
+    observed_window: Option<(i64, i64)>,
+) -> Result<String, StorageError> {
+    if let Some((observed_from, observed_until)) = observed_window {
+        if observed_from < 0
+            || observed_until <= observed_from
+            || observed_until > 8_640_000_000_000_000
+        {
+            return Err(StorageError::InvalidQuery);
+        }
+    }
+    let mut expression = format!("(process.instance = \"{process_instance}\" OR process.parent_instance = \"{process_instance}\") AND sensor.id = \"windows.observations\" AND (event.type = \"process.snapshot.observed\" OR event.type = \"process.snapshot.changed\" OR event.type = \"network.snapshot.observed\" OR event.type = \"network.snapshot.changed\" OR event.type = \"network.udp.snapshot.observed\" OR event.type = \"network.udp.snapshot.changed\")");
+    if let Some((observed_from, observed_until)) = observed_window {
+        // Static numeric fields compile to bound SQLite values. Apply the
+        // observation-time window in WHERE before the existing bounded LIMIT.
+        expression.push_str(&format!(
+            " AND event.observed_at >= {observed_from} AND event.observed_at < {observed_until}"
+        ));
+    }
+    Ok(expression)
 }
 
 pub fn api_error(code: &str, message: &str) -> ApiError {
@@ -552,3 +670,6 @@ async fn calendar_retention_runs_before_append_and_reports_retained_count(
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod history_tests;
