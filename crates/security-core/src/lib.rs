@@ -17,7 +17,8 @@ pub use identity_activity::{
 mod investigation;
 pub use assessment::{assess, AlertAssessment, AlertContext, RiskFactor};
 pub use investigation::{
-    investigate, Investigation, InvestigationEdge, InvestigationNode, MAX_INVESTIGATION_EVENTS,
+    investigate, Investigation, InvestigationEdge, InvestigationNode, InvestigationObservation,
+    MAX_INVESTIGATION_EVENTS,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
