@@ -1,38 +1,53 @@
 # Piko: development progress and remaining work
 
 
-## Latest finite delivery (2026-10-27)
+## Latest finite delivery (2026-10-29)
 
-Recovery/package source is now committed and pushed as efaf465. Eighteen staged
-files matched the tested exact-source snapshot (documentation evidence reviewed
-separately). PS5.1/7.6.8 updater 26, launcher 7 and recovery metadata 4 fixture
-groups passed; all four debug binaries built and the unsigned preview assembled
-with matching hashes. Existing/out-of-scope destinations refused. No installation,
-SCM/UAC/DPAPI recovery qualification or release publication occurred.
-Evidence: validation/2026-10-27-recovery-package.md.
+Published `dba078b` to development/first-release: minimal Tokio 1.53.3 security
+correction and complete four-executable CI artifact/hash inventory. Manifest/lock
+files match the previously tested exact snapshot byte for byte. No deferred
+APP-03 changes were staged. Complete Chromium rerun on the HEAD-matched frontend
+snapshot passed 70/70; this supersedes the earlier incomplete full-suite rerun.
+Evidence: validation/2026-10-29-release-followup.md.
 
-9ce7cd3 publishes the PS5/7 isolated persistence/preflight fixtures and CI wiring.
-73b4ff7/fbbbb4e consolidate mechanical Windows-module formatting, correcting an
-initial wrong-edition check. Actual workspace edition-2021 formatting and offline
-locked workspace all-target compilation now pass on the selected snapshot.
-Evidence: validation/2026-10-27-check-script-guards.md and win-platform-format.md.
+Live upstream review found no feature-only resolution for the age-chain findings:
+HPKE/P-256 and localization are mandatory even with defaults disabled. Published
+age 0.12.1/i18n-config 0.4.8 do not provide the required compatible corrections.
+FIRST-DEPS remains open; no ignores, downgrade or vendored patches were applied.
+Exact next source action: investigate an isolated older-age X25519 graph and
+upstream localization parser substitution, including full advisory review,
+bidirectional archive/key fixtures and parser compatibility. Do not adopt those
+unreviewed alternatives or claim the audit passes. Rebuild a matching package
+after dependency resolution. Windows qualification still needs an authorized
+isolated environment; installed runtime remains untouched.
 
-3551f55 publishes the isolated IPC smoke fixes; PS5/7 both pass nine checks
-with 14 verified events. CLI was skipped because the installed service was
-running; direct development IPC passed. No installed runtime was changed.
-Evidence: validation/2026-10-27-isolated-ipc-smoke.md.
+## Earlier security triage (2026-10-27)
 
-Included ADR/audit/matrix/status and workflow documentation are consolidated in
-the accompanying documentation checkpoint. Historical source-only notes are
-explicitly dated and linked to the newer local evidence. Deferred APP-03/browser
-source and unrelated documentation remain local and preserved.
+The automatic ce18649 CI dependency job failed. New release blocker: age0.12.1
+brings crypto-bigint0.5.5 (RUSTSEC-2026-0387) and build-time basic-toml0.1.10
+(RUSTSEC-2026-0374); no stable compatible upstream fix for both was established.
+Do not add ignores or change archive cryptography to bypass this finding.
+Read-only run: https://github.com/Sec4Every1/piko/actions/runs/40526941564.
+The Windows job was still running at the last inspection; its result is not green.
 
-Exact next action: establish the authorized isolated Windows environment, record
-its OS/snapshot/candidate identity and execute docs/WINDOWS_QUALIFICATION.md.
-The local debug preview is prepared, unsigned and private; no installation is
-authorized on this host. Event Log persistence, SCM/UAC/DPAPI interruption/recovery
-and the full release gate remain open. VM availability was asked while source
-work continued; no answer or installation authorization has been assumed.
+Tokio's separate RUSTSEC-2026-0386 correction is prepared on an exact ce18649
+snapshot: six direct minimums and both locks now use1.53.3; only that package's
+locked version/checksum changes.224 workspace tests passed/5ignored; offline
+workspace all-target Clippy and desktop all-target check passed. Existing Cargo
+fetched the patch for actual security remediation; no tools were installed.
+CI artifact/hash lists now include all four executables, including the helper.
+Evidence: validation/2026-10-27-ci-security-triage.md.
+
+The earlier debug package predates Tokio's patch; do not present it as matching
+the updated candidate. Installed runtime/protections/evidence remain untouched.
+No release, main merge or manual CI dispatch occurred.
+
+Exact next action: resolve the two age-chain audit findings through reviewed
+compatible dependency/source changes or an explicitly documented risk decision;
+keep the release gate blocked until resolved. Then rebuild a matching candidate
+and execute WINDOWS_QUALIFICATION.md in an authorized isolated environment.
+A VM/separate-PC availability question is pending; no answer has been assumed.
+Deferred APP-03/browser source remains local and preserved.
 
 ## Current delivery direction (accepted 2026-10-27)
 
@@ -52,7 +67,7 @@ VM availability/access and authorization for its installs/runtime tests are stil
 needed; do not infer permission to change the installed host runtime.
 
 Remote main was verified read-only at dc47a24 on 2026-10-27 and remains
-unchanged. development/first-release was created and pushed through 3551f55:
+unchanged. development/first-release was created and pushed through dba078b (Tokio security correction and CI artifact inventory):
 e3109b7 consolidates the observed-history core; f1b665d storage paging/query
 fields; c0e4141 IPC/service; 4e00996 Tauri/desktop timeline and navigation.
 16bbeb5 consolidates protected evidence and bounded maintenance storage logic.
@@ -133,8 +148,8 @@ refuses missing, malformed or ambiguous rows; CI now wires the included script
 fixtures on both runners. See validation/2026-10-27-check-script-guards.md.
 No actual Event Log probe or full CI ran.
 
-The included source/check-script/documentation consolidation is complete for this
-checkpoint. Exact next action is the isolated Windows qualification plan above;
+The included consolidation is complete; dependency audit failure reopens
+FIRST-CHECKS. Resolve the recorded age-chain findings before Windows/package closure;
 fix any reproduced included-path failure before package/release closure. Do not
 resume deferred APP-03/browser implementation to replace this release gate.
 
