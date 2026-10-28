@@ -10,16 +10,27 @@ APP-03 changes were staged. Complete Chromium rerun on the HEAD-matched frontend
 snapshot passed 70/70; this supersedes the earlier incomplete full-suite rerun.
 Evidence: validation/2026-10-29-release-followup.md.
 
-Live upstream review found no feature-only resolution for the age-chain findings:
-HPKE/P-256 and localization are mandatory even with defaults disabled. Published
-age 0.12.1/i18n-config 0.4.8 do not provide the required compatible corrections.
-FIRST-DEPS remains open; no ignores, downgrade or vendored patches were applied.
-Exact next source action: investigate an isolated older-age X25519 graph and
-upstream localization parser substitution, including full advisory review,
-bidirectional archive/key fixtures and parser compatibility. Do not adopt those
-unreviewed alternatives or claim the audit passes. Rebuild a matching package
-after dependency resolution. Windows qualification still needs an authorized
-isolated environment; installed runtime remains untouched.
+The reviewed i18n-config parser backport now removes basic-toml from the root
+graph, retaining age 0.12.1 and all cryptographic source. Its provenance/license
+and source-package inventory are explicit. The desktop graph is unchanged and
+contains neither age nor i18n-config. Final isolated candidate: 231 workspace
+tests passed / 5 ignored, all-target Clippy and PS5/7 source-copy checks passed.
+Seven parser regressions run in normal workspace tests. Evidence:
+validation/2026-10-29-localization-parser.md; decision: ADR0055.
+
+Do not repeat/adopt the age 0.11.5 downgrade experiment: cross-version archives
+and keys passed, but source review found a nonzeroized temporary secret-key
+encoding vector absent from 0.12.1. Its separate macro backport is also excluded.
+crypto-bigint 0.5.5 / RUSTSEC-2026-0387 remains the dependency release blocker;
+no advisory ignores or cryptographic forks were added. Supplemental OSV review
+is not a cargo-deny pass. Existing debug packages predate the current source.
+
+Exact next action: inspect automatic CI for the parser-backport development
+commit, fix any new included-path failure, and review compatible upstream age /
+HPKE/P-256 remediation for crypto-bigint >=0.7.6. A risk exception needs explicit
+approval; do not infer it from continuation. Rebuild a matching candidate after
+dependency closure. Windows qualification still needs an authorized isolated
+environment; installed runtime remains untouched.
 
 ## Earlier security triage (2026-10-27)
 

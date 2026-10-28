@@ -34,3 +34,28 @@ foreach ($pikoName in $pikoReviewed.Keys) {
 }
 Copy-Item -LiteralPath (Join-Path $pikoRoot 'docs/THIRD_PARTY_MPL.md') -Destination (Join-Path $Destination 'THIRD_PARTY_MPL.md') -Force
 Copy-Item -LiteralPath (Join-Path $pikoRoot 'docs/licenses/MPL-2.0.txt') -Destination (Join-Path $Destination 'MPL-2.0.txt') -Force
+
+# Include the reviewed build-time parser backport and its retained MIT notice.
+# Resolve the service workspace: this build dependency is absent from the desktop graph.
+$pikoCoreJson = & cargo metadata --offline --locked --format-version 1 --filter-platform x86_64-pc-windows-msvc --manifest-path (Join-Path $pikoRoot 'Cargo.toml')
+if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve patched build-time sources for distribution.' }
+$pikoCore = $pikoCoreJson | ConvertFrom-Json
+$pikoParserRoot = [IO.Path]::GetFullPath((Join-Path $pikoRoot 'vendor/i18n-config'))
+$pikoParser = @($pikoCore.packages | Where-Object { $_.name -ceq 'i18n-config' -and $_.version -ceq '0.4.8' })
+if ($pikoParser.Count -ne 1 -or $null -ne $pikoParser[0].source -or
+    [IO.Path]::GetFullPath($pikoParser[0].manifest_path) -ine (Join-Path $pikoParserRoot 'Cargo.toml')) {
+    throw 'Expected local i18n-config parser backport is missing from the locked graph.'
+}
+$pikoParserDestination = Join-Path $pikoSourceDestination 'i18n-config-0.4.8-piko'
+# Explicit inventory excludes standalone Cargo.lock, target output and machine paths.
+foreach ($pikoRelative in @('Cargo.toml', 'LICENSE.txt', 'README.md', 'CHANGELOG.md', 'PIKO_PATCH.md',
+    'src/lib.rs', 'src/fluent.rs', 'src/gettext.rs', 'tests/piko_parser.rs', 'tests/fixtures/age-i18n.toml')) {
+    $pikoOriginal = Join-Path $pikoParserRoot $pikoRelative
+    $pikoCopied = Join-Path $pikoParserDestination $pikoRelative
+    New-Item -ItemType Directory -Path (Split-Path -Parent $pikoCopied) -Force | Out-Null
+    Copy-Item -LiteralPath $pikoOriginal -Destination $pikoCopied -Force
+    if ((Get-FileHash -LiteralPath $pikoOriginal -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $pikoCopied -Algorithm SHA256).Hash) {
+        throw "Patched source copy mismatch: $pikoRelative"
+    }
+}

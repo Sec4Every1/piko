@@ -35,3 +35,7 @@ expect_used = "deny"
 lto = "thin"
 strip = "debuginfo"
 
+
+# Reviewed build-time parser backport; see vendor/i18n-config/PIKO_PATCH.md.
+[patch.crates-io]
+i18n-config = { path = 'vendor/i18n-config' }

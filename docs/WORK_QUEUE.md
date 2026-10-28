@@ -21,7 +21,7 @@ have a concrete user-visible result, tests/evidence and accurate capability stat
 |---|---|---|
 | DELIVERY-CONSOLIDATE | DONE for included first-release source; deferred work preserved | development/first-release includes reviewed history, storage/maintenance, key backend/UI, recovery/update/package and check-script source through 3551f55 plus the documentation checkpoint. Exact-source local evidence is in docs/validation. Deferred APP-03/browser changes remain local. No installed qualification, main merge or release is implied. |
 | FIRST-SOURCE | VERIFIED-LOCAL; installed behavior unqualified | Included paths only; fresh 2048MiB/12month policy, installed stopped-service UI and aligned package/manual source. Evidence in VALIDATION.md. |
-| FIRST-DEPS | ACTIVE: remote audit failed | ce18649 dependency job reports basic-toml0.1.10 and crypto-bigint0.5.5 through age0.12.1. Compatible reviewed remediation is required; no advisory ignores added. Separate Tokio1.53.3 security patch passes224 workspace tests/5ignored, Clippy and desktop check locally. Evidence: validation/2026-10-27-ci-security-triage.md. |
+| FIRST-DEPS | ACTIVE: crypto-bigint unresolved | Reviewed local i18n-config parser backport removes basic-toml; age remains 0.12.1. Final candidate passes 231 workspace tests / 5 ignored, Clippy and PS5/7 source-copy checks. Age 0.11.5 experiment rejected for weaker temporary key clearing despite format compatibility. crypto-bigint0.5.5 / RUSTSEC-2026-0387 still blocks release; no advisory ignores. Evidence: validation/2026-10-29-localization-parser.md; ADR0055. |
 | FIRST-CHECKS | ACTIVE: Event Log persistence gate failed; recheck pending | Rust/frontend/Tauri, runtime IPC smoke, package preview, PowerShell 5.1/7 fixtures and 68 Playwright cases passed before the latest source changes. Event Log smoke previously said first-run records were missing after restart. Script source now checks IDs that fall outside the later 100-row page individually, including the probe and raw XML; isolated exact-query fixtures pass on PS5/7; the actual probe is unrun. If the next authorized run still fails, investigate stored rows/bookmarks. Evidence: VALIDATION.md. |
 | FIRST-WINDOWS | BLOCKED: qualification/consent | Install, collection/reconnect/full, supported response/undo and reachable recovery qualification; preserve existing runtime until authorized. |
 | FIRST-PACKAGE | ACTIVE: unsigned local preview inspected; final gate pending | Debug preview has manifest-matched binaries, third-party sources and privacy checks. Final package/checksum review follows Windows qualification; source pushed to development branch; no release publication. |
@@ -54,8 +54,9 @@ them; do not mark an entire requirement complete from a small monitoring slice.
 - Tokio 1.53.3 correction and complete CI binary inventory are published in dba078b;
   complete HEAD-matched Chromium rerun passed 70/70. Evidence:
   validation/2026-10-29-release-followup.md.
-- Investigate compatible age-chain source/dependency remediation in isolation;
-  mandatory dependencies prevent a feature-only fix. No exceptions/downgrade accepted.
+- basic-toml is removed by the checked parser backport; inspect its automatic CI.
+- Resolve crypto-bigint through compatible upstream changes or an explicitly
+  approved risk disposition. Do not adopt the rejected age downgrade or add ignores.
 - Resolve age-chain audit findings, rebuild a matching candidate, then execute WINDOWS_QUALIFICATION.md in an authorized environment.
 - APP-03/browser remain deferred; exact evidence and next action are in NEXT_SESSION.md.
 

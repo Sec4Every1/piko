@@ -12,3 +12,10 @@ uuid = { version = "1", features = ["serde"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+i18n-config = '=0.4.8'
+
+[[test]]
+name = 'localization_parser'
+path = '../../vendor/i18n-config/tests/piko_parser.rs'
