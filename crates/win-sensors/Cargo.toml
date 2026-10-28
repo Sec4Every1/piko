@@ -13,7 +13,7 @@ piko-win-platform = { version = "0.2.0", path = "../win-platform" }
 quick-xml = "0.42"
 time = { version = "0.3", features = ["parsing"] }
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1.49", features = ["sync"] }
+tokio = { version = "1.53.3", features = ["sync"] }
 
 [lints]
 workspace = true

@@ -12,7 +12,7 @@ path = "src/main.rs"
 piko-ipc = { version = "0.2.0", path = "../../crates/ipc" }
 piko-event-storage = { version = "0.2.0", path = "../../crates/event-storage" }
 serde_json = "1"
-tokio = { version = "1.49", features = ["rt", "macros", "net", "time"] }
+tokio = { version = "1.53.3", features = ["rt", "macros", "net", "time"] }
 
 [lints]
 workspace = true

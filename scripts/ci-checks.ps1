@@ -76,6 +76,7 @@ try {
     $pikoBinaries = @(
         'target/release/piko.exe',
         'target/release/piko-service.exe',
+        'target/release/piko-network-helper.exe',
         'apps/desktop-ui/src-tauri/target/release/piko-desktop.exe'
     )
     $pikoHashes = foreach ($pikoBinary in $pikoBinaries) {
