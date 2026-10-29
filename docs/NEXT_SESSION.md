@@ -25,12 +25,26 @@ crypto-bigint 0.5.5 / RUSTSEC-2026-0387 remains the dependency release blocker;
 no advisory ignores or cryptographic forks were added. Supplemental OSV review
 is not a cargo-deny pass. Existing debug packages predate the current source.
 
-Exact next action: inspect automatic CI for the parser-backport development
-commit, fix any new included-path failure, and review compatible upstream age /
-HPKE/P-256 remediation for crypto-bigint >=0.7.6. A risk exception needs explicit
-approval; do not infer it from continuation. Rebuild a matching candidate after
-dependency closure. Windows qualification still needs an authorized isolated
-environment; installed runtime remains untouched.
+Automatic CI for parser commit `0b4a64c` completed with both jobs failing
+(run 40787796606). Windows reached the localization tests: six passed, one
+failed because the test converted a checkout CRLF fixture into CRCRLF.
+The test-only correction preserves the original and constructs LF/CRLF variants
+after normalization. Existing Windows GNU tools reproduced the original failure
+(six passed / one failed) with an embedded CRLF fixture. Corrected tests pass
+seven/seven with both LF and CRLF fixtures; targeted Clippy, formatting, diff and
+PS5/7 source-copy checks pass. MSVC remains unavailable locally; automatic CI is
+still required for that toolchain. Detailed evidence:
+validation/2026-10-29-ci-parser-followup.md.
+
+Dependency CI confirms basic-toml is gone; crypto-bigint still fails. Published
+age remains 0.12.1 and its dependency ranges exclude the fixed stable chain.
+Upstream rage PRs 648/649 were open/unmerged at inspection; no exception or fork.
+
+Exact next action: inspect automatic CI for the reviewed parser-test correction
+on development/first-release; fix any remaining included-path failure. Revisit a
+published compatible age remediation, retaining the dependency release block.
+Rebuild a matching candidate after dependency closure. Windows qualification
+still needs an authorized isolated environment; installed runtime is untouched.
 
 ## Earlier security triage (2026-10-27)
 

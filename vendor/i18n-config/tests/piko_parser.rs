@@ -47,7 +47,10 @@ fn assert_parse_error(text: &str) {
 
 #[test]
 fn actual_age_macro_configuration_and_crlf() {
-    for text in [AGE_CONFIG.to_owned(), AGE_CONFIG.replace('\n', "\r\n")] {
+    // Git may check out the embedded fixture with CRLF on Windows. Normalize
+    // before constructing each encoding so CRLF never becomes CRCRLF.
+    let lf = AGE_CONFIG.replace("\r\n", "\n");
+    for text in [AGE_CONFIG.to_owned(), lf.clone(), lf.replace('\n', "\r\n")] {
         let fixture = Fixture::new();
         let config = I18nConfig::from_file(fixture.file("i18n.toml", &text)).unwrap();
         assert_eq!(config.fallback_language.to_string(), "en-US");

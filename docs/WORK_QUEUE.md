@@ -54,7 +54,11 @@ them; do not mark an entire requirement complete from a small monitoring slice.
 - Tokio 1.53.3 correction and complete CI binary inventory are published in dba078b;
   complete HEAD-matched Chromium rerun passed 70/70. Evidence:
   validation/2026-10-29-release-followup.md.
-- basic-toml is removed by the checked parser backport; inspect its automatic CI.
+- Parser CI inspected: Windows regression test creates CRCRLF from checkout CRLF.
+  Corrected tests pass 7/7 for embedded LF and CRLF using existing Windows GNU
+  tools; targeted Clippy, formatting and PS5/7 source-copy checks pass.
+  Inspect automatic MSVC CI after publishing the reviewed correction.
+  basic-toml is absent; crypto-bigint still fails dependency CI.
 - Resolve crypto-bigint through compatible upstream changes or an explicitly
   approved risk disposition. Do not adopt the rejected age downgrade or add ignores.
 - Resolve age-chain audit findings, rebuild a matching candidate, then execute WINDOWS_QUALIFICATION.md in an authorized environment.
