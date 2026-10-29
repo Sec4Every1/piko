@@ -87,3 +87,19 @@ additional synthetic collection scenarios prove delayed arrival and bounded
 failure/cleanup on PS5/7. Logs: event-retry-ps{5,7}.log in ignored follow-up.
 This is a proposed timing mitigation, not proof of the actual CI cause; real
 Windows CI is required. No installed runtime or real local Event Log was changed.
+
+## Automatic run 40847874560 on aded975
+
+The Windows job passed on the exact published source. The real isolated Event
+Log smoke reported PASS for active subscriptions, the new diagnostic and its
+original XML, durable bookmarks, sampled source-key uniqueness across restart,
+and hash verification. It observed 69 first-run and 84 second-run Windows
+records, with zero targeted UUID rechecks. This does not prove the older-page
+fallback ran; that boundary retains its isolated SQLite and synthetic coverage.
+The same Windows job passed locked Rust checks, frontend type/unit checks,
+70 Chromium scenarios and native desktop build. The real IPC smoke reported
+10 tests and 14 verified events. See the ignored CI log
+.build/ci-followup-20261029/windows-aded975.log. The separate dependency job
+failed the root RUSTSEC-2026-0387 audit; desktop audit passed and npm reported
+three low issues. No installed runtime or Windows release qualification follows
+from CI runner results.

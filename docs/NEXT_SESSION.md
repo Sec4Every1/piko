@@ -62,9 +62,17 @@ for up to ten attempts, retaining the token-in-original-XML assertion and report
 candidate count on failure. Synthetic delayed/missing tests pass on PS5/7.
 Evidence: validation/2026-10-29-event-log-source-keys.md.
 
-Exact next action: inspect automatic CI for bounded diagnostic retry. If failure
-persists, use candidate count to investigate provider query versus collection,
-and reproduce without using installed runtime. Then revisit upstream age fixes.
+Automatic run40847874560 on exact commit aded975 passed the Windows job,
+including the combined locked checks and real IPC smoke. The dependency job
+failed only the root Rust audit for RUSTSEC-2026-0387; desktop audit passed and
+npm reported three low findings. Authenticated log: .build/ci-followup-20261029/
+dependencies-aded975.log. Upstream rage PRs 648/649 remained open and unmerged
+at 09:35 UTC; crates.io still lists age 0.12.1 as latest stable. CI success does
+not qualify installed Windows behavior.
+
+Exact next action: monitor upstream for a compatible age release; inspect the authenticated
+CI log for any further details if needed. Preserve the existing
+advisory gate; do not infer dependency closure from the Windows result.
 Keep FIRST-DEPS blocked until closure; existing debug packages predate this source.
 Rebuild a matching candidate after dependency closure. FIRST-WINDOWS still needs
 an authorized isolated environment. Installed runtime/protections are untouched.
