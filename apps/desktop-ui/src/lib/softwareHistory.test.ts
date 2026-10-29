@@ -8,3 +8,9 @@ it('rejects malformed change identities, order and unsupported kinds',()=>{
   for(const entries of [[{...event,after:{...meta,id:'other'}}],[{...event,kind:'malware'}],[event,event],[{...event,kind:'disappeared'}],[{...event,sequence:-1}],[{...event,after:null}]])expect(()=>parseHistory({...history,entries})).toThrow();
   expect(()=>parseHistory({...history,entries:Array(51).fill(event)})).toThrow();
 });
+it('rejects non-string kinds without coercing them to valid labels',()=>{
+  for(const kind of [['appeared'],['version_changed'],{},null,1,true])
+    expect(()=>parseHistory({...history,entries:[{...event,kind}]})).toThrow();
+  expect(()=>parseHistory({...history,entries:[{...event,kind:'appeared',before:meta}]})).toThrow();
+  expect(parseHistory({...history,entries:[{...event,kind:'appeared',before:null}]}).entries[0].kind).toBe('appeared');
+});
