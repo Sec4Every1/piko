@@ -64,6 +64,12 @@ jobs:
         with:
           node-version: '24.19.0'
           package-manager-cache: false
+      - name: Isolated dependency gate fixtures
+        run: |
+          powershell.exe -NoProfile -File scripts/tests/DependencyChecks.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File scripts/tests/DependencyChecks.Tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install pinned Rust
         run: rustup toolchain install 1.99.0-x86_64-pc-windows-msvc --profile minimal
       - name: Install pinned audit and SBOM tools
