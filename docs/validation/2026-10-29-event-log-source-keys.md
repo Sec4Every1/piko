@@ -74,3 +74,16 @@ the Windows Event Log prefix and JSON escaping. A fixture using the exact Defend
 sensor/target and all collection fixtures pass on PS5/7. Logs are
 .build/ci-followup-20261029/event-defender-ps{5,7}.log; automatic Windows CI
 must confirm the fix. No real Event Log probe or installed runtime was used here.
+
+## Automatic run 40846609834 and bounded probe retry
+
+Windows failed because the diagnostic/token was missing after the first lookup;
+the log does not reveal the candidate count or establish a cause. Dependency
+job again failed only the core crypto-bigint advisory, while desktop audit passed.
+The collector now checks for the diagnostic up to ten times with one-second
+spacing and reports the final candidate count on failure. It still verifies the
+token in retrieved original XML, refuses saturation, and stops on errors. Two
+additional synthetic collection scenarios prove delayed arrival and bounded
+failure/cleanup on PS5/7. Logs: event-retry-ps{5,7}.log in ignored follow-up.
+This is a proposed timing mitigation, not proof of the actual CI cause; real
+Windows CI is required. No installed runtime or real local Event Log was changed.

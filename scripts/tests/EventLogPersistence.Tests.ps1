@@ -104,7 +104,7 @@ Write-Output 'PASS provider-specific probe query works outside general page and 
 $binary='fixture-service'; $config='fixture-config'; $runDir=$PSScriptRoot
 $testToken='fixture-fresh-token'
 $record.raw_evidence_reference='fixture-raw'
-$script:collection=@{Page=@($record);Duplicate=$false;SourceQueries=0;Stops=0;Duration=0}
+$script:collection=@{Page=@($record);Duplicate=$false;SourceQueries=0;Stops=0;Duration=0;ProbeReads=0;Delay=0}
 function Start-Sleep { param([int]$Seconds) }
 function Start-Process {
     param($FilePath,$ArgumentList,[switch]$PassThru,$WindowStyle,$RedirectStandardError)
@@ -126,7 +126,7 @@ function Invoke-DevPiko([hashtable]$Command) {
         }
         'list_events' {
             if ($Command.filter.limit -eq 100) { $data=$script:collection.Page }
-            elseif ($Command.filter.limit -eq 128) { $data=@($record) }
+            elseif ($Command.filter.limit -eq 128) { $script:collection.ProbeReads++; $data=if ($script:collection.ProbeReads -le $script:collection.Delay) { @() } else { @($record) } }
             elseif ($Command.filter.limit -eq 2) {
                 $script:collection.SourceQueries++
                 $data=if ($script:collection.Duplicate) { @($record,$other) } else { @($record) }
@@ -161,3 +161,16 @@ $collected=Collect -Run 1
 if ($script:collection.Duration -ne 30 -or $script:collection.Probes -ne 1 -or
     $collected.probe_record.event_id -ne $id) { throw 'First collection lost outside-page probe identity' }
 Write-Output 'PASS first collection preserves probe identity outside general page'
+
+$script:collection.ProbeReads=0
+$script:collection.Delay=3
+$collected=Collect -Run 1
+if ($script:collection.ProbeReads -ne 4 -or $collected.probe_event_id -ne $id) { throw 'Delayed diagnostic was not retried' }
+Write-Output 'PASS delayed diagnostic is retried without starting a real process'
+
+$script:collection.ProbeReads=0
+$script:collection.Delay=100
+$beforeStops=$script:collection.Stops
+Assert-Refused { Collect -Run 1 }
+if ($script:collection.ProbeReads -ne 10 -or $script:collection.Stops -ne ($beforeStops + 1)) { throw 'Probe retry was not bounded or did not clean up' }
+Write-Output 'PASS missing diagnostic is refused after bounded retries and cleaned up'

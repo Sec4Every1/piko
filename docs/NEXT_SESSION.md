@@ -51,15 +51,20 @@ printable channel names and JSON-escapes them. The actual Defender identifier
 fixture and all collection fixtures pass PS5/7. Evidence:
 validation/2026-10-29-event-log-source-keys.md.
 
-Automatic run40846609834 on ff1b9cf was in progress for both Windows and
-dependencies at the latest inspection. Live crates.io metadata still lists age
-0.12.1 as the latest stable; upstream rage PRs 648/649 remain open/unmerged.
-No compatible published fix is established by this refresh.
+Automatic run40846609834 on ff1b9cf completed with both jobs failing.
+Dependency CI confirmed root RUSTSEC-2026-0387, desktop cargo-deny passed and
+npm found three low issues. Windows passed source guard fixture but its real
+Event Log smoke failed to find the live diagnostic/XML after one attempt. The
+log does not identify whether the provider query returned zero candidates or
+collection was late; do not claim the cause established. The SQLite query has
+an isolated integration regression. Source now retries bounded diagnostic lookup
+for up to ten attempts, retaining the token-in-original-XML assertion and reporting
+candidate count on failure. Synthetic delayed/missing tests pass on PS5/7.
+Evidence: validation/2026-10-29-event-log-source-keys.md.
 
-Exact next action: inspect automatic CI for the Defender-channel correction;
-if it still fails, capture bounded, non-sensitive identity validation diagnostics
-and investigate the actual rejected field. Assess the independent audit output.
-Then revisit published compatible age remediation.
+Exact next action: inspect automatic CI for bounded diagnostic retry. If failure
+persists, use candidate count to investigate provider query versus collection,
+and reproduce without using installed runtime. Then revisit upstream age fixes.
 Keep FIRST-DEPS blocked until closure; existing debug packages predate this source.
 Rebuild a matching candidate after dependency closure. FIRST-WINDOWS still needs
 an authorized isolated environment. Installed runtime/protections are untouched.

@@ -112,22 +112,30 @@ function Collect([int]$Run, [string[]]$ExpectedIds = @(), [string]$ExpectedProbe
         foreach ($channel in @('System','Application')) {
             if (@($health.sensors | Where-Object { $_.id -eq "windows.event_log.$channel" -and $_.state -eq 'active' }).Count -ne 1) { throw "Live $channel subscription unavailable" }
         }
-        $live = @(Read-EventLogProbeCandidates)
-        if ($ExpectedProbeId -and $ExpectedProbeId -notin @($live | ForEach-Object { [string]$_.event_id })) {
-            $live += @(Read-PersistedEvent $ExpectedProbeId)
-        }
         $foundToken = $false
         $probeEventId = ''
         $probeRecord = $null
-        foreach ($record in $live) {
-            $raw = (Invoke-DevPiko @{action='get_evidence';filter=@{evidence_id=$record.raw_evidence_reference}}).result.Ok.data
-            if ([Text.Encoding]::UTF8.GetString([byte[]]$raw.bytes).Contains($testToken)) {
-                $foundToken = $true
-                $probeEventId = [string]$record.event_id
-                $probeRecord = $record
+        $candidateCount = 0
+        # Subscription, queue and durable flush can lag probe emission. Bound
+        # polling while retaining the token-in-original-XML assertion.
+        for ($attempt = 0; $attempt -lt 10 -and !$foundToken; $attempt++) {
+            $live = @(Read-EventLogProbeCandidates)
+            if ($ExpectedProbeId -and $ExpectedProbeId -notin @($live | ForEach-Object { [string]$_.event_id })) {
+                $live += @(Read-PersistedEvent $ExpectedProbeId)
             }
+            $candidateCount = $live.Count
+            foreach ($record in $live) {
+                $raw = (Invoke-DevPiko @{action='get_evidence';filter=@{evidence_id=$record.raw_evidence_reference}}).result.Ok.data
+                if ([Text.Encoding]::UTF8.GetString([byte[]]$raw.bytes).Contains($testToken)) {
+                    $foundToken = $true
+                    $probeEventId = [string]$record.event_id
+                    $probeRecord = $record
+                    break
+                }
+            }
+            if (!$foundToken -and $attempt -lt 9) { Start-Sleep -Seconds 1 }
         }
-        if (!$foundToken) { throw 'Live Event Log probe or its original XML is missing' }
+        if (!$foundToken) { throw "Live Event Log probe or its original XML is missing after bounded retry (candidates: $candidateCount)" }
         if (!$process.WaitForExit(($runSeconds + 5) * 1000) -or $process.ExitCode -ne 0) { throw 'Runtime failed bounded stop' }
         return @{health=$health; events=$events; verified=$verify.verified_events; targeted_rechecks=$rechecked; probe_event_id=$probeEventId; probe_record=$probeRecord}
     } finally { if (!$process.HasExited) { Stop-Process -Id $process.Id } }
