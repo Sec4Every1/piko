@@ -35,7 +35,14 @@ Published next finite source deliveries on development/first-release:
   more margin; no arbitrary slow-IPC guarantee. Actual strengthened smoke awaits CI.
   Evidence: validation/2026-10-29-event-log-source-keys.md.
 
-Automatic run40845440758 is in progress on exact commit777dd42. Avoid canceling
+Automatic run40845440758 on exact commit777dd42: dependency job completed
+with failure only for the root crypto-bigint advisory. Desktop cargo-deny passed
+advisories/bans/licenses/sources; npm audit reported three low issues and no
+moderate/high/critical issues. The aggregated gate continued to the other phases.
+Windows job was still running at inspection. Full ignored log:
+.build/ci-followup-20261029/dependencies-777dd42.log.
+
+Automatic run40845440758 remains in progress for Windows. Avoid canceling
 that cold build just to publish test-only follow-up. Four additional collection
 orchestration fixture groups pass on PS5/7 (13 groups total): on/off-page source
 verification, replay cleanup and first-probe identity. This checked follow-up is

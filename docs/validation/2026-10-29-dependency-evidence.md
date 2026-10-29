@@ -47,3 +47,13 @@ reported zero moderate/high/critical and three low findings (deepmerge plus its
 two transitive Svelte Vite dependents), with no available fix reported. No npm
 install/update or lock rewrite was performed. This does not replace the complete
 CI dependency job. Ignored report: npm-audit-lock.json in the follow-up directory.
+
+## Automatic run 40845440758
+
+On commit 777dd42, the independent CI phases executed. The root Rust audit
+failed on RUSTSEC-2026-0387; desktop Rust advisories, bans, licenses and sources
+passed. npm audit reported three low issues, no available fix, and no findings
+at or above the configured moderate threshold. The final job failure identifies
+only the root Rust audit. Windows was still running at inspection. The full
+ignored log is dependencies-777dd42.log in the follow-up directory. This result
+is not overall dependency qualification and does not authorize a risk exception.
