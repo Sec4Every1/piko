@@ -52,3 +52,13 @@ directory. This adds direct SQL/parser/storage verification without real evidenc
 Real Windows collection/bookmark persistence and new full IPC/timing behavior
 await automatic Windows CI. No live probe,
 service installation, driver, real evidence or protection change was performed.
+
+## Collection orchestration fixtures
+
+An additional four groups execute the actual Collect function with mocked process,
+sleep, diagnostic and IPC boundaries. They verify source-key checks still run
+when the original UUID is on the newest page, outside-page source/probe retrieval,
+refusal and process cleanup on replay, and preservation of the first diagnostic
+identity when the general page excludes it. The two finite lifetime arguments are
+asserted. All 13 groups pass on PS5/7; no process, sleep or actual diagnostic runs.
+Logs: event-collection-ps{5,7}.log in the same ignored follow-up directory.

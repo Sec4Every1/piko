@@ -21,23 +21,29 @@ Upstream rage PRs 648/649 were open/unmerged at review; no exception or crypto f
 Do not repeat/adopt the rejected age 0.11.5 downgrade: its temporary key encoding
 has a zeroization regression. See validation/2026-10-29-localization-parser.md.
 
-Next finite source deliveries prepared after that successful Windows run:
+Published next finite source deliveries on development/first-release:
 - `713ea40`: dependency CI runs independent audits/SBOMs after a phase failure,
   then fails with all phase errors. Stale destination SBOMs are cleared. Nine
   isolated scenarios pass on PS5/7; no threshold or advisory ignore changes.
   Evidence: validation/2026-10-29-dependency-evidence.md.
-- Event Log smoke checks every sampled first-run source key (plus the diagnostic)
+- `777dd42`: Event Log smoke checks every sampled first-run source key (plus the diagnostic)
   for missing/replaced/replayed rows independently of the newest page. Separate
   bounded probe lookup removes general-page dependence; saturation refuses.
-  Nine fixture groups and CI preflight pass on PS5/7. A real isolated SQLite
+  Initial nine fixture groups and CI preflight pass on PS5/7. A real isolated SQLite
   regression plus storage-target Clippy/format pass on Windows GNU; it recovers
   original/replay rows outside a newer 100-row page. Finite test lifetimes have
   more margin; no arbitrary slow-IPC guarantee. Actual strengthened smoke awaits CI.
   Evidence: validation/2026-10-29-event-log-source-keys.md.
 
-Exact next action: inspect automatic CI for the dependency-evidence/source-key
-commits on development/first-release, fix any included-path failure and assess
-all independent audit results. Then revisit published compatible age remediation.
+Automatic run40845440758 is in progress on exact commit777dd42. Avoid canceling
+that cold build just to publish test-only follow-up. Four additional collection
+orchestration fixture groups pass on PS5/7 (13 groups total): on/off-page source
+verification, replay cleanup and first-probe identity. This checked follow-up is
+prepared locally; no production behavior change after777dd42.
+
+Exact next action: inspect automatic run40845440758, fix any included-path failure
+and assess all independent audit results. Publish the checked collection-fixture
+follow-up once that run completes, preserving unrelated local source. Then revisit published compatible age remediation.
 Keep FIRST-DEPS blocked until closure; existing debug packages predate this source.
 Rebuild a matching candidate after dependency closure. FIRST-WINDOWS still needs
 an authorized isolated environment. Installed runtime/protections are untouched.

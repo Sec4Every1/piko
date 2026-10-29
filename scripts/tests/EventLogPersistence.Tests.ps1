@@ -5,9 +5,9 @@ $tokens = $null; $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
 $definition = @($ast.FindAll({ param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Read-PersistedEvent', 'Read-UniqueWindowsRecord', 'Read-EventLogProbeCandidates')
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Read-PersistedEvent', 'Read-UniqueWindowsRecord', 'Read-EventLogProbeCandidates', 'Collect')
 }, $true))
-if ($definition.Count -ne 3) { throw 'Expected three production persistence query functions' }
+if ($definition.Count -ne 4) { throw 'Expected production persistence queries and collection function' }
 foreach ($function in $definition) { . ([scriptblock]::Create($function.Extent.Text)) }
 $script:calls = 0
 $script:rows = @()
@@ -93,3 +93,65 @@ if (@(Read-EventLogProbeCandidates).Count -ne 0) { throw 'Empty probe query retu
 $script:rows=@(1..128 | ForEach-Object { $record })
 Assert-Refused { Read-EventLogProbeCandidates }
 Write-Output 'PASS provider-specific probe query works outside general page and refuses saturation'
+
+# Exercise production collection orchestration with no process, sleep or OS probe.
+$binary='fixture-service'; $config='fixture-config'; $runDir=$PSScriptRoot
+$testToken='fixture-fresh-token'
+$record.raw_evidence_reference='fixture-raw'
+$script:collection=@{Page=@($record);Duplicate=$false;SourceQueries=0;Stops=0;Duration=0}
+function Start-Sleep { param([int]$Seconds) }
+function Start-Process {
+    param($FilePath,$ArgumentList,[switch]$PassThru,$WindowStyle,$RedirectStandardError)
+    if ($FilePath -ne 'fixture-service' -or $WindowStyle -ne 'Hidden') { throw 'Unexpected collection process request' }
+    $script:collection.Duration=[int]$ArgumentList[-1]
+    $process=[pscustomobject]@{Handle=0;HasExited=$false;ExitCode=0;Id=12345}
+    $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($Timeout) $this.HasExited=$true; return $true }
+    return $process
+}
+function Stop-Process { param($Id) $script:collection.Stops++ }
+function Invoke-DevPiko([hashtable]$Command) {
+    $data=$null
+    switch ($Command.action) {
+        'get_health' { $data=@{sensors=@(@{id='windows.event_log.System';state='active'},@{id='windows.event_log.Application';state='active'})} }
+        'verify_store' { $data=@{externally_anchored=$false;verified_events=152} }
+        'get_evidence' {
+            if ($Command.filter.evidence_id -ne 'fixture-raw') { throw 'Unexpected raw reference' }
+            $data=@{bytes=[Text.Encoding]::UTF8.GetBytes($testToken)}
+        }
+        'list_events' {
+            if ($Command.filter.limit -eq 100) { $data=$script:collection.Page }
+            elseif ($Command.filter.limit -eq 128) { $data=@($record) }
+            elseif ($Command.filter.limit -eq 2) {
+                $script:collection.SourceQueries++
+                $data=if ($script:collection.Duplicate) { @($record,$other) } else { @($record) }
+            } else { throw 'Unexpected collection query bound' }
+        }
+        default { throw 'Unexpected collection command' }
+    }
+    return @{result=@{Ok=@{data=$data}}}
+}
+$collected=Collect -Run 2 -ExpectedIds @($id) -ExpectedProbeId $id -ExpectedRecords @($record)
+if ($script:collection.SourceQueries -ne 1 -or $collected.targeted_rechecks -ne 0 -or
+    $collected.probe_record.event_id -ne $id -or $script:collection.Duration -ne 60 -or $script:collection.Stops -ne 0) { throw 'Collection skipped a source key on the newest page or failed bounded stop' }
+Write-Output 'PASS production collection verifies source keys even when UUID is on newest page'
+$script:collection.Page=@($other)
+$collected=Collect -Run 2 -ExpectedIds @($id) -ExpectedProbeId $id -ExpectedRecords @($record)
+if ($collected.targeted_rechecks -ne 1 -or $collected.probe_event_id -ne $id) { throw 'Collection failed outside-page source/probe verification' }
+Write-Output 'PASS production collection retrieves probe and source key outside general page'
+$script:collection.Duplicate=$true
+Assert-Refused { Collect -Run 2 -ExpectedIds @($id) -ExpectedProbeId $id -ExpectedRecords @($record) }
+if ($script:collection.Stops -ne 1) { throw 'Failed collection did not clean up its own test process' }
+Write-Output 'PASS production collection rejects replay and cleans up its process'
+
+$script:collection.Duplicate=$false
+$script:collection.Probes=0
+$probe='Invoke-FixtureProbe'
+function Invoke-FixtureProbe([string]$Token) {
+    if ($Token -ne $testToken) { throw 'Unexpected diagnostic token' }
+    $script:collection.Probes++
+    $global:LASTEXITCODE=0
+}
+$collected=Collect -Run 1
+if ($script:collection.Duration -ne 30 -or $script:collection.Probes -ne 1 -or
+    $collected.probe_record.event_id -ne $id) { throw 'First collection lost outside-page probe identity' }
+Write-Output 'PASS first collection preserves probe identity outside general page'
