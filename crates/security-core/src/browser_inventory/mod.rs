@@ -69,18 +69,75 @@ fn family(name: &str) -> Option<BrowserFamily> {
         Some(BrowserFamily::Edge)
     } else if name.eq_ignore_ascii_case("Google Chrome") {
         Some(BrowserFamily::Chrome)
-    } else if name.eq_ignore_ascii_case("Mozilla Firefox") {
+    } else if firefox_name(name) {
         Some(BrowserFamily::Firefox)
     } else {
         None
     }
 }
 
+// Mozilla's Windows installer uses "Mozilla Firefox[ ESR] (ARCH LOCALE)";
+// older releases also included a version before the architecture. These are
+// still unauthenticated registry claims, not evidence of a real installation.
+fn firefox_name(name: &str) -> bool {
+    const BRAND: &str = "Mozilla Firefox";
+    if name.eq_ignore_ascii_case(BRAND) {
+        return true;
+    }
+    let Some(prefix) = name.get(..BRAND.len()) else {
+        return false;
+    };
+    if !prefix.eq_ignore_ascii_case(BRAND) {
+        return false;
+    }
+    let Some(suffix) = name.get(BRAND.len()..) else {
+        return false;
+    };
+    if !suffix.starts_with(' ') {
+        return false;
+    }
+    let Some((qualifier, arch_locale)) = suffix.split_once(" (") else {
+        return false;
+    };
+    let Some(arch_locale) = arch_locale.strip_suffix(')') else {
+        return false;
+    };
+    let Some((arch, locale)) = arch_locale.split_once(' ') else {
+        return false;
+    };
+    if !["x86", "x64", "arm64"]
+        .iter()
+        .any(|known| arch.eq_ignore_ascii_case(known))
+        || locale.len() > 32
+        || !locale.split('-').all(|part| {
+            !part.is_empty() && part.len() <= 8 && part.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+    {
+        return false;
+    }
+    let words: Vec<_> = qualifier.split_ascii_whitespace().collect();
+    match words.as_slice() {
+        [] => true,
+        [word] if word.eq_ignore_ascii_case("ESR") => true,
+        [version] => firefox_version(version),
+        [version, channel] if channel.eq_ignore_ascii_case("ESR") => firefox_version(version),
+        _ => false,
+    }
+}
+
+fn firefox_version(version: &str) -> bool {
+    version.len() <= 32
+        && version.contains('.')
+        && version
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn bounded(value: Option<&str>) -> bool {
     value.is_none_or(|s| s.len() <= MAX_FIELD_BYTES && !s.contains('\0'))
 }
 
-/// Interprets only exact names as unverified candidate registrations. Scan and
+/// Interprets recognized names as unverified candidate registrations. Scan and
 /// output are capped; omitted/ambiguous registrations do not establish absence.
 pub fn from_registrations<'a>(
     registrations: impl IntoIterator<Item = Registration<'a>>,
@@ -167,6 +224,45 @@ mod tests {
         assert!(!result.browser_discovery_complete && !result.profiles_known);
         assert!(!result.executable_identity_verified && !result.protection_status_known);
         assert!(result.registration_scan_complete);
+    }
+
+    #[test]
+    fn firefox_installer_names_are_unverified_candidates() {
+        for name in [
+            "Mozilla Firefox (x64 it)",
+            "mozilla firefox (x86 en-US)",
+            "Mozilla Firefox ESR (arm64 de)",
+            "Mozilla Firefox 87.0 (x64 en-US)",
+            "Mozilla Firefox 115.2.1 ESR (x64 fr)",
+        ] {
+            let result = from_registrations([entry(name)], true);
+            assert_eq!(result.candidates.len(), 1, "{name}");
+            assert_eq!(result.candidates[0].family, BrowserFamily::Firefox);
+            assert!(!result.browser_discovery_complete && !result.executable_identity_verified);
+        }
+    }
+
+    #[test]
+    fn firefox_helper_and_malformed_suffixes_are_not_classified() {
+        for name in [
+            "Mozilla Firefox Helper",
+            "Mozilla Firefox Helper (x64 it)",
+            "Mozilla Firefox (x64)",
+            "Mozilla Firefox (x64 )",
+            "Mozilla Firefox (x64 en--US)",
+            "Mozilla Firefox (x64 en-US) Helper",
+            "Mozilla Firefox (unknown en-US)",
+            "Mozilla Firefox 87x0 (x64 en-US)",
+            "Mozilla Firefox87.0 (x64 en-US)",
+            "Mozilla Firefox (x64 en-US",
+        ] {
+            assert!(
+                from_registrations([entry(name)], true)
+                    .candidates
+                    .is_empty(),
+                "{name}"
+            );
+        }
     }
 
     #[test]
