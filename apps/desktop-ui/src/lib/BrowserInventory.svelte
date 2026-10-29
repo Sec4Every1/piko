@@ -28,7 +28,7 @@
       <p role="status">{it ? 'Ricerca incompleta: alcune registrazioni potrebbero mancare.' : 'Incomplete scan: some registrations may be missing.'}</p>
     {/if}
     {#if inventory.candidates.length === 0}
-      <p>{it ? 'Nessuna registrazione trovata. Altri browser o profili potrebbero essere presenti.' : 'No registrations found. Other browsers or profiles may still exist.'}</p>
+      <p>{it ? 'Nessuna registrazione di Edge, Chrome o Firefox riconosciuta. Altri browser o profili potrebbero essere presenti.' : 'No Edge, Chrome or Firefox registrations recognized. Other browsers or profiles may still exist.'}</p>
     {:else}
       <ul>
         {#each inventory.candidates as candidate}
