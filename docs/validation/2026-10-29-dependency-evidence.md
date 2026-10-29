@@ -57,3 +57,10 @@ at or above the configured moderate threshold. The final job failure identifies
 only the root Rust audit. Windows was still running at inspection. The full
 ignored log is dependencies-777dd42.log in the follow-up directory. This result
 is not overall dependency qualification and does not authorize a risk exception.
+
+## Upstream refresh
+
+The current crates.io age metadata still reports latest stable 0.12.1. GitHub
+API inspection shows rage PRs 648 and 649 open and unmerged. No dependency or
+lockfile changed. Automatic run 40846609834 was still in progress at inspection;
+its results are not inferred from the previous run.

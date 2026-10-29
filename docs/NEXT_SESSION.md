@@ -51,6 +51,11 @@ printable channel names and JSON-escapes them. The actual Defender identifier
 fixture and all collection fixtures pass PS5/7. Evidence:
 validation/2026-10-29-event-log-source-keys.md.
 
+Automatic run40846609834 on ff1b9cf was in progress for both Windows and
+dependencies at the latest inspection. Live crates.io metadata still lists age
+0.12.1 as the latest stable; upstream rage PRs 648/649 remain open/unmerged.
+No compatible published fix is established by this refresh.
+
 Exact next action: inspect automatic CI for the Defender-channel correction;
 if it still fails, capture bounded, non-sensitive identity validation diagnostics
 and investigate the actual rejected field. Assess the independent audit output.
