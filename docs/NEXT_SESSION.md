@@ -3,48 +3,45 @@
 
 ## Latest finite delivery (2026-10-29)
 
-Published `dba078b` to development/first-release: minimal Tokio 1.53.3 security
-correction and complete four-executable CI artifact/hash inventory. Manifest/lock
-files match the previously tested exact snapshot byte for byte. No deferred
-APP-03 changes were staged. Complete Chromium rerun on the HEAD-matched frontend
-snapshot passed 70/70; this supersedes the earlier incomplete full-suite rerun.
-Evidence: validation/2026-10-29-release-followup.md.
+Development commit `8835432` completed automatic Windows CI successfully:
+[run 40843256431](https://github.com/Sec4Every1/piko/actions/runs/40843256431).
+MSVC formatting/build/Clippy, 231 Rust tests (5 ignored), script fixtures,
+real isolated IPC and Event Log smoke, frontend type/107 unit/70 Chromium tests,
+frontend and native desktop builds passed. Event Log smoke saw 69/71 Windows
+records across restart, raw XML and active subscriptions. It needed zero older
+UUID fallback queries; this run alone does not exercise page-pressure behavior.
+This is CI-runner development evidence, not installed Windows qualification.
+Local MSVC is unavailable; existing GNU tools verified the parser-test correction.
+Evidence: validation/2026-10-29-ci-parser-followup.md.
 
-The reviewed i18n-config parser backport now removes basic-toml from the root
-graph, retaining age 0.12.1 and all cryptographic source. Its provenance/license
-and source-package inventory are explicit. The desktop graph is unchanged and
-contains neither age nor i18n-config. Final isolated candidate: 231 workspace
-tests passed / 5 ignored, all-target Clippy and PS5/7 source-copy checks passed.
-Seven parser regressions run in normal workspace tests. Evidence:
-validation/2026-10-29-localization-parser.md; decision: ADR0055.
+The dependency job still fails on crypto-bigint 0.5.5 / RUSTSEC-2026-0387.
+basic-toml is removed by the reviewed i18n-config parser backport (ADR0055).
+Age remains 0.12.1; published dependency ranges exclude the fixed stable chain.
+Upstream rage PRs 648/649 were open/unmerged at review; no exception or crypto fork.
+Do not repeat/adopt the rejected age 0.11.5 downgrade: its temporary key encoding
+has a zeroization regression. See validation/2026-10-29-localization-parser.md.
 
-Do not repeat/adopt the age 0.11.5 downgrade experiment: cross-version archives
-and keys passed, but source review found a nonzeroized temporary secret-key
-encoding vector absent from 0.12.1. Its separate macro backport is also excluded.
-crypto-bigint 0.5.5 / RUSTSEC-2026-0387 remains the dependency release blocker;
-no advisory ignores or cryptographic forks were added. Supplemental OSV review
-is not a cargo-deny pass. Existing debug packages predate the current source.
+Next finite source deliveries prepared after that successful Windows run:
+- `713ea40`: dependency CI runs independent audits/SBOMs after a phase failure,
+  then fails with all phase errors. Stale destination SBOMs are cleared. Nine
+  isolated scenarios pass on PS5/7; no threshold or advisory ignore changes.
+  Evidence: validation/2026-10-29-dependency-evidence.md.
+- Event Log smoke checks every sampled first-run source key (plus the diagnostic)
+  for missing/replaced/replayed rows independently of the newest page. Separate
+  bounded probe lookup removes general-page dependence; saturation refuses.
+  Nine fixture groups and CI preflight pass on PS5/7. A real isolated SQLite
+  regression plus storage-target Clippy/format pass on Windows GNU; it recovers
+  original/replay rows outside a newer 100-row page. Finite test lifetimes have
+  more margin; no arbitrary slow-IPC guarantee. Actual strengthened smoke awaits CI.
+  Evidence: validation/2026-10-29-event-log-source-keys.md.
 
-Automatic CI for parser commit `0b4a64c` completed with both jobs failing
-(run 40787796606). Windows reached the localization tests: six passed, one
-failed because the test converted a checkout CRLF fixture into CRCRLF.
-The test-only correction preserves the original and constructs LF/CRLF variants
-after normalization. Existing Windows GNU tools reproduced the original failure
-(six passed / one failed) with an embedded CRLF fixture. Corrected tests pass
-seven/seven with both LF and CRLF fixtures; targeted Clippy, formatting, diff and
-PS5/7 source-copy checks pass. MSVC remains unavailable locally; automatic CI is
-still required for that toolchain. Detailed evidence:
-validation/2026-10-29-ci-parser-followup.md.
-
-Dependency CI confirms basic-toml is gone; crypto-bigint still fails. Published
-age remains 0.12.1 and its dependency ranges exclude the fixed stable chain.
-Upstream rage PRs 648/649 were open/unmerged at inspection; no exception or fork.
-
-Exact next action: inspect automatic CI for the reviewed parser-test correction
-on development/first-release; fix any remaining included-path failure. Revisit a
-published compatible age remediation, retaining the dependency release block.
-Rebuild a matching candidate after dependency closure. Windows qualification
-still needs an authorized isolated environment; installed runtime is untouched.
+Exact next action: inspect automatic CI for the dependency-evidence/source-key
+commits on development/first-release, fix any included-path failure and assess
+all independent audit results. Then revisit published compatible age remediation.
+Keep FIRST-DEPS blocked until closure; existing debug packages predate this source.
+Rebuild a matching candidate after dependency closure. FIRST-WINDOWS still needs
+an authorized isolated environment. Installed runtime/protections are untouched.
+Deferred APP-03/browser source remains local, pass-through and not_enforced.
 
 ## Earlier security triage (2026-10-27)
 

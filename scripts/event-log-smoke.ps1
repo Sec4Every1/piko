@@ -58,8 +58,33 @@ function Read-PersistedEvent([string]$Id) {
     }
     return $matching[0]
 }
-function Collect([int]$Run, [string[]]$ExpectedIds = @(), [string]$ExpectedProbeId = '') {
-    $runSeconds = if ($ExpectedIds.Count -gt 0) { 20 } else { 8 }
+function Read-UniqueWindowsRecord([object]$Record) {
+    $id = [string]$Record.event_id
+    $sensor = [string]$Record.sensor_id
+    $identifier = [string]$Record.target.identifier
+    if ($id -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' -or
+        $sensor -notmatch '^windows\.event_log\.[a-zA-Z0-9_.-]{1,96}$' -or
+        [string]::IsNullOrWhiteSpace($identifier) -or $identifier.Length -gt 512) {
+        throw 'Invalid Windows record identity for restart verification'
+    }
+    # JSON string encoding is also the query language's quoted-string encoding.
+    $expression = 'sensor.id = {0} AND target.identifier = {1}' -f ($sensor | ConvertTo-Json -Compress), ($identifier | ConvertTo-Json -Compress)
+    $rows = @(Invoke-DevPiko @{action='list_events';filter=@{limit=2;expression=$expression}}).result.Ok.data
+    $matching = @($rows | Where-Object { $_ -and $_.event_id -eq $id -and $_.sensor_id -eq $sensor -and $_.target.identifier -eq $identifier })
+    if (@($rows).Count -ne 1 -or $matching.Count -ne 1) {
+        throw "Windows source record missing, replaced or replayed after restart: $id"
+    }
+    return $matching[0]
+}
+function Read-EventLogProbeCandidates {
+    # Separate bounded provider query: a busy general Windows page can exclude
+    # the diagnostic before the first run has recorded its UUID.
+    $rows = @(Invoke-DevPiko @{action='list_events';filter=@{limit=128;expression='sensor.id = "windows.event_log.Application" AND target.identifier CONTAINS "Application:piko:"'}}).result.Ok.data
+    if (@($rows).Count -ge 128) { throw 'Event Log probe candidate bound reached; result is inconclusive' }
+    return $rows
+}
+function Collect([int]$Run, [string[]]$ExpectedIds = @(), [string]$ExpectedProbeId = '', [object[]]$ExpectedRecords = @()) {
+    $runSeconds = if ($ExpectedIds.Count -gt 0) { 60 } else { 30 }
     $process = Start-Process -FilePath $binary -ArgumentList @('--config', ('"' + $config + '"'), '--run-for-seconds', $runSeconds) -PassThru -WindowStyle Hidden -RedirectStandardError (Join-Path $runDir "run-$Run.log")
     $null = $process.Handle # Retain ExitCode on Windows PowerShell 5.
     try {
@@ -76,44 +101,48 @@ function Collect([int]$Run, [string[]]$ExpectedIds = @(), [string]$ExpectedProbe
         $events = @(Invoke-DevPiko @{action='list_events';filter=@{limit=100;search='windows_event_log'}}).result.Ok.data
         $pageIds = @($events | ForEach-Object { [string]$_.event_id })
         $rechecked = 0
-        foreach ($id in $ExpectedIds) {
-            if ($id -in $pageIds) { continue }
-            # A newer 100-row page does not prove an older row disappeared.
-            $null = Read-PersistedEvent $id
-            $rechecked++
+        foreach ($record in $ExpectedRecords) {
+            # Presence by UUID alone misses replay rows with a new UUID outside
+            # the newest page. Query each original source key with limit two.
+            $null = Read-UniqueWindowsRecord $record
+            if ([string]$record.event_id -notin $pageIds) { $rechecked++ }
         }
         $verify = (Invoke-DevPiko @{action='verify_store'}).result.Ok.data
         if ($verify.externally_anchored) { throw 'Integrity failed' }
         foreach ($channel in @('System','Application')) {
             if (@($health.sensors | Where-Object { $_.id -eq "windows.event_log.$channel" -and $_.state -eq 'active' }).Count -ne 1) { throw "Live $channel subscription unavailable" }
         }
-        $live = @($events | Where-Object { $_.target.identifier -like 'Application:piko:*' })
+        $live = @(Read-EventLogProbeCandidates)
         if ($ExpectedProbeId -and $ExpectedProbeId -notin @($live | ForEach-Object { [string]$_.event_id })) {
             $live += @(Read-PersistedEvent $ExpectedProbeId)
         }
         $foundToken = $false
         $probeEventId = ''
+        $probeRecord = $null
         foreach ($record in $live) {
             $raw = (Invoke-DevPiko @{action='get_evidence';filter=@{evidence_id=$record.raw_evidence_reference}}).result.Ok.data
             if ([Text.Encoding]::UTF8.GetString([byte[]]$raw.bytes).Contains($testToken)) {
                 $foundToken = $true
                 $probeEventId = [string]$record.event_id
+                $probeRecord = $record
             }
         }
         if (!$foundToken) { throw 'Live Event Log probe or its original XML is missing' }
         if (!$process.WaitForExit(($runSeconds + 5) * 1000) -or $process.ExitCode -ne 0) { throw 'Runtime failed bounded stop' }
-        return @{health=$health; events=$events; verified=$verify.verified_events; targeted_rechecks=$rechecked; probe_event_id=$probeEventId}
+        return @{health=$health; events=$events; verified=$verify.verified_events; targeted_rechecks=$rechecked; probe_event_id=$probeEventId; probe_record=$probeRecord}
     } finally { if (!$process.HasExited) { Stop-Process -Id $process.Id } }
 }
 $first = Collect 1
 $expectedIds = @($first.events | Where-Object { $_.event_category -eq 'windows_event_log' } | ForEach-Object { [string]$_.event_id })
-$second = Collect -Run 2 -ExpectedIds $expectedIds -ExpectedProbeId $first.probe_event_id
+$expectedRecords = @($first.events | Where-Object event_category -eq 'windows_event_log')
+if ($first.probe_event_id -notin $expectedIds) { $expectedRecords += $first.probe_record }
+$second = Collect -Run 2 -ExpectedIds $expectedIds -ExpectedProbeId $first.probe_event_id -ExpectedRecords $expectedRecords
 $observed = @($first.events | Where-Object { $_.event_category -eq 'windows_event_log' })
 if ($observed.Count -eq 0) { throw "No actual Windows records captured. Sensor state: $($first.health.sensors | ConvertTo-Json -Compress)" }
 if (@($observed | Where-Object { !$_.raw_evidence_reference -or !$_.integrity_metadata.source_integrity -or $_.process -or $_.actor_identity }).Count -ne 0) { throw 'Missing evidence/bookmark or fabricated process attribution' }
 $all = @($second.events | Where-Object { $_.event_category -eq 'windows_event_log' })
 if (@($all | Group-Object { $_.sensor_id + '/' + $_.target.identifier } | Where-Object Count -gt 1).Count -gt 0) { throw 'Duplicate Windows records after restart' }
-$summary = [ordered]@{result='PASS'; tests=@('real Windows records','new live diagnostic received','original XML read through API','active subscriptions','raw evidence references','durable bookmarks','no fabricated actor','restart without replay duplicates','hash verification'); first_windows_records=$observed.Count; second_windows_records=$all.Count; targeted_rechecks=$second.targeted_rechecks; channels=@($second.health.sensors | Where-Object id -Like 'windows.event_log.*' | Select-Object id,state,detail); evidence_directory=$runDir} | ConvertTo-Json -Depth 6
+$summary = [ordered]@{result='PASS'; tests=@('real Windows records','new live diagnostic received','original XML read through API','active subscriptions','raw evidence references','durable bookmarks','no fabricated actor','sampled Windows source keys unique across restart','hash verification'); first_windows_records=$observed.Count; second_windows_records=$all.Count; targeted_rechecks=$second.targeted_rechecks; channels=@($second.health.sensors | Where-Object id -Like 'windows.event_log.*' | Select-Object id,state,detail); evidence_directory=$runDir} | ConvertTo-Json -Depth 6
 [IO.File]::WriteAllText((Join-Path $runDir 'result.json'), $summary, (New-Object Text.UTF8Encoding($false)))
 $summary
 

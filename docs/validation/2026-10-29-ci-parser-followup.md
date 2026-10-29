@@ -73,3 +73,17 @@ no compatible lock-only update, advisory ignore or risk acceptance is establishe
 Next: publish the reviewed test correction and inspect its automatic MSVC CI.
 Preserve the dependency release block; a full green CI or package qualification
 is not implied by these targeted checks.
+
+## Subsequent automatic Windows result
+
+Commit 88354321cbfd4c844ee394b25b371eabd588825a completed
+[run 40843256431](https://github.com/Sec4Every1/piko/actions/runs/40843256431)
+with Windows success and dependency failure (RUSTSEC-2026-0387). Windows includes
+231 Rust tests passed / 5 ignored, formatting, workspace/native Clippy/build,
+script fixtures, real isolated IPC smoke, Event Log restart smoke (69 first-run,
+71 second-run Windows records, zero targeted fallback lookups), frontend type
+check, 107 unit tests and 70 Chromium scenarios, production and desktop builds.
+The artifact/hash inventory step completed. This closes the earlier unrun Event
+Log gate on this CI snapshot, not installed qualification or dependency closure.
+Full logs are ignored as windows-8835432.log and dependencies-8835432.log in the
+follow-up evidence directory. Later smoke strengthening is separately verified.

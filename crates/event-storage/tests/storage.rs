@@ -704,3 +704,62 @@ fn bundled_sqlite_includes_the_wal_reset_fix() {
         rusqlite::version()
     );
 }
+
+#[test]
+fn restart_source_queries_detect_replays_outside_the_newest_page() -> Result<(), Box<dyn Error>> {
+    let directory = TestDirectory::new()?;
+    let mut store = SqliteEventStore::open(directory.database(), StorageConfig::default())?;
+    let host = store.host_id();
+    let make_event = |runtime, sequence, identifier: &str| {
+        let mut event = SecurityEvent::heartbeat(host, runtime, sequence, sequence as i64, 1);
+        event.sensor_id = "windows.event_log.Application".into();
+        event.event_category = "windows_event_log".into();
+        event.event_type = "windows.event_log.1000".into();
+        event.process = None;
+        event.target = Some(piko_event_schema::EventTarget {
+            kind: "windows_event_log_record".into(),
+            identifier: identifier.into(),
+        });
+        event
+    };
+    let original = make_event(Uuid::new_v4(), 1, "Application:piko:42");
+    store.append_batch(std::slice::from_ref(&original))?;
+    drop(store);
+    let mut store = SqliteEventStore::open(directory.database(), StorageConfig::default())?;
+    let runtime = Uuid::new_v4();
+    let replay = make_event(runtime, 1, "Application:piko:42");
+    store.append_batch(std::slice::from_ref(&replay))?;
+    let newer: Vec<_> = (2..152)
+        .map(|sequence| make_event(runtime, sequence, &format!("Application:other:{sequence}")))
+        .collect();
+    for batch in newer.chunks(128) {
+        store.append_batch(batch)?;
+    }
+    let page = store.query(&EventQuery {
+        limit: 100,
+        search: Some("windows_event_log".into()),
+        ..EventQuery::default()
+    })?;
+    assert_eq!(page.len(), 100);
+    assert!(page
+        .iter()
+        .all(|event| event.event_id != original.event_id && event.event_id != replay.event_id));
+    let exact = store.query(&EventQuery {
+        limit: 2,
+        expression: Some(r#"sensor.id = "windows.event_log.Application" AND target.identifier = "Application:piko:42""#.into()),
+        ..EventQuery::default()
+    })?;
+    assert_eq!(exact.len(), 2);
+    assert!(exact
+        .iter()
+        .any(|event| event.event_id == original.event_id));
+    assert!(exact.iter().any(|event| event.event_id == replay.event_id));
+    let probes = store.query(&EventQuery {
+        limit: 128,
+        expression: Some(r#"sensor.id = "windows.event_log.Application" AND target.identifier CONTAINS "Application:piko:""#.into()),
+        ..EventQuery::default()
+    })?;
+    assert_eq!(probes.len(), 2);
+    assert_eq!(store.verify_integrity()?.verified_events, 152);
+    Ok(())
+}
