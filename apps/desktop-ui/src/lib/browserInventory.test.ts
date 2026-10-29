@@ -22,4 +22,13 @@ describe('browser inventory response', () => {
     expect(() => parseBrowserInventory({ ...sample(), candidates: [{ ...sample().candidates[0], registered_version: 'bad\0version' }] })).toThrow();
     expect(() => parseBrowserInventory({ ...sample(), candidates: [{ ...sample().candidates[0], family: 'other' }] })).toThrow();
   });
+  it('requires a known family as a string without coercing JSON values', () => {
+    for (const family of ['edge', 'chrome', 'firefox']) {
+      const result = parseBrowserInventory({ ...sample(), candidates: [{ ...sample().candidates[0], family }] });
+      expect(result.candidates[0].family).toBe(family);
+    }
+    for (const family of [['chrome'], {}, 1, null, true]) {
+      expect(() => parseBrowserInventory({ ...sample(), candidates: [{ ...sample().candidates[0], family }] })).toThrow();
+    }
+  });
 });

@@ -42,7 +42,8 @@ export function parseBrowserInventory(value: unknown): BrowserInventory {
       || value.executable_identity_verified !== false || value.protection_status_known !== false
       || ((value.truncated || value.oversized_metadata) && value.registration_scan_complete)) throw invalid();
   const candidates: BrowserCandidate[] = value.candidates.map((item: unknown) => {
-    if (!object(item) || !['edge', 'chrome', 'firefox'].includes(String(item.family))
+    if (!object(item) || typeof item.family !== 'string'
+        || !['edge', 'chrome', 'firefox'].includes(item.family)
         || !text(item.registration_id) || item.registration_id.length === 0
         || !text(item.registered_name) || item.registered_name.length === 0
         || !optionalText(item.registered_publisher) || !optionalText(item.registered_version)
