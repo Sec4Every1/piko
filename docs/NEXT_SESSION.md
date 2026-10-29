@@ -42,15 +42,19 @@ moderate/high/critical issues. The aggregated gate continued to the other phases
 Windows job was still running at inspection. Full ignored log:
 .build/ci-followup-20261029/dependencies-777dd42.log.
 
-Automatic run40845440758 remains in progress for Windows. Avoid canceling
-that cold build just to publish test-only follow-up. Four additional collection
-orchestration fixture groups pass on PS5/7 (13 groups total): on/off-page source
-verification, replay cleanup and first-probe identity. This checked follow-up is
-prepared locally; no production behavior change after777dd42.
+Automatic run40845440758 Windows failed at the new source identity guard
+(event-log-smoke.ps1:68); earlier Rust and fixture checks passed. The log does
+not identify which field failed. Source inspection found the supported Defender
+channel contains spaces and a slash, which the guard incorrectly rejected; this
+is a plausible cause, not yet confirmed by CI. The guard now permits bounded
+printable channel names and JSON-escapes them. The actual Defender identifier
+fixture and all collection fixtures pass PS5/7. Evidence:
+validation/2026-10-29-event-log-source-keys.md.
 
-Exact next action: inspect automatic run40845440758, fix any included-path failure
-and assess all independent audit results. Publish the checked collection-fixture
-follow-up once that run completes, preserving unrelated local source. Then revisit published compatible age remediation.
+Exact next action: inspect automatic CI for the Defender-channel correction;
+if it still fails, capture bounded, non-sensitive identity validation diagnostics
+and investigate the actual rejected field. Assess the independent audit output.
+Then revisit published compatible age remediation.
 Keep FIRST-DEPS blocked until closure; existing debug packages predate this source.
 Rebuild a matching candidate after dependency closure. FIRST-WINDOWS still needs
 an authorized isolated environment. Installed runtime/protections are untouched.

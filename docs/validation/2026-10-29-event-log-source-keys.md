@@ -62,3 +62,15 @@ refusal and process cleanup on replay, and preservation of the first diagnostic
 identity when the general page excludes it. The two finite lifetime arguments are
 asserted. All 13 groups pass on PS5/7; no process, sleep or actual diagnostic runs.
 Logs: event-collection-ps{5,7}.log in the same ignored follow-up directory.
+
+## Automatic Windows run 40845440758
+
+Windows failed at the new source identity validation on an actual record. The
+CI error did not identify the rejected field. Source inspection found the
+supported Microsoft-Windows-Windows Defender/Operational channel has spaces and
+a slash, excluded by the prior regex. That is a plausible cause, not confirmed
+by the log. The guard now accepts bounded printable channel names while retaining
+the Windows Event Log prefix and JSON escaping. A fixture using the exact Defender
+sensor/target and all collection fixtures pass on PS5/7. Logs are
+.build/ci-followup-20261029/event-defender-ps{5,7}.log; automatic Windows CI
+must confirm the fix. No real Event Log probe or installed runtime was used here.

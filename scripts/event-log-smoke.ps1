@@ -63,7 +63,7 @@ function Read-UniqueWindowsRecord([object]$Record) {
     $sensor = [string]$Record.sensor_id
     $identifier = [string]$Record.target.identifier
     if ($id -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' -or
-        $sensor -notmatch '^windows\.event_log\.[a-zA-Z0-9_.-]{1,96}$' -or
+        $sensor -notmatch '^windows\.event_log\.[^\x00-\x1f]{1,96}$' -or
         [string]::IsNullOrWhiteSpace($identifier) -or $identifier.Length -gt 512) {
         throw 'Invalid Windows record identity for restart verification'
     }

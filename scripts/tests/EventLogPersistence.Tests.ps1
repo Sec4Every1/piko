@@ -80,6 +80,12 @@ $script:expression='sensor.id = "windows.event_log.Application" AND target.ident
 $script:rows=@($escaped)
 $null=Read-UniqueWindowsRecord $escaped
 Write-Output 'PASS source identity query quotes special characters'
+$defender=@{event_id=$id;sensor_id='windows.event_log.Microsoft-Windows-Windows Defender/Operational';target=@{identifier='Microsoft-Windows-Windows Defender/Operational:provider:42'}}
+$script:expression='sensor.id = ' + ($defender.sensor_id | ConvertTo-Json -Compress) + ' AND target.identifier = ' + ($defender.target.identifier | ConvertTo-Json -Compress)
+$script:rows=@($defender)
+$null=Read-UniqueWindowsRecord $defender
+Write-Output 'PASS supported Defender channel with spaces and slash'
+
 function Invoke-DevPiko([hashtable]$Command) {
     if ($Command.action -ne 'list_events' -or $Command.filter.limit -ne 128 -or
         $Command.filter.expression -cne 'sensor.id = "windows.event_log.Application" AND target.identifier CONTAINS "Application:piko:"') { throw 'Unexpected bounded probe query' }
