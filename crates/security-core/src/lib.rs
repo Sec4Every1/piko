@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod assessment;
-pub mod browser_inventory;
 mod authentication;
+pub mod browser_inventory;
 mod identity_activity;
 pub use authentication::{
     failed_logon_attempt, failed_logon_bursts, FailedLogonAttempt, FailedLogonSummary,
