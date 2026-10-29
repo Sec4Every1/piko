@@ -47,3 +47,30 @@ test('empty partial browser scan does not claim that other browsers are absent',
   await expect(section.getByText('Nessuna registrazione di Edge, Chrome o Firefox riconosciuta. Altri browser o profili potrebbero essere presenti.')).toBeVisible();
   await expect(section.getByText(/Ricerca incompleta/)).toBeVisible();
 });
+
+test('identical browser claims expose distinct unverified registration details', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'isTauri', { value: true });
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {
+      invoke: async (command: string) => {
+        if (command === 'get_health') return { product: 'piko', version: '0.2.0', protection_state: 'degraded', runtime_mode: 'development_console', uptime_seconds: 1, stored_events: 0, queue_depth: 0, dropped_events: 0, sensors: [] };
+        if (command === 'list_alerts' || command === 'list_alert_reviews') return [];
+        if (command === 'browser_inventory') return { candidates: ['synthetic-32', 'synthetic-64'].map(registration_id => ({ family: 'chrome', registration_id, registered_name: 'Google Chrome', registered_publisher: null, registered_version: '1', scope: 'machine' })), registration_scan_complete: true, truncated: false, oversized_metadata: false, browser_discovery_complete: false, profiles_known: false, executable_identity_verified: false, protection_status_known: false };
+        throw new Error('synthetic unavailable');
+      },
+    } });
+  });
+  await page.goto('/');
+  await page.locator('.sidebar nav').getByRole('button', { name: 'Permessi app', exact: true }).click();
+  const section = page.getByRole('region', { name: 'Browser rilevati' });
+  await section.getByRole('button', { name: 'Cerca registrazioni' }).click();
+  const details = section.locator('details');
+  await expect(details).toHaveCount(2);
+  await expect(section.getByText('synthetic-32')).not.toBeVisible();
+  await details.nth(0).locator('summary').click();
+  await details.nth(1).locator('summary').click();
+  await expect(details.nth(0)).toContainText('synthetic-32');
+  await expect(details.nth(1)).toContainText('synthetic-64');
+  await expect(section.getByText('Dettagli registrazione non verificata')).toHaveCount(2);
+  await expect(section.getByText('Ambito dichiarato: sistema')).toHaveCount(2);
+});

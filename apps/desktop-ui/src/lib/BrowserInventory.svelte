@@ -36,6 +36,11 @@
             {#if candidate.registered_version} — {candidate.registered_version}{/if}
             {#if candidate.registered_publisher} — {candidate.registered_publisher}{/if}
             <span> ({it ? 'registrazione di sistema, non verificata' : 'unverified system registration'})</span>
+            <details>
+              <summary>{it ? 'Dettagli registrazione non verificata' : 'Unverified registration details'}</summary>
+              <p>{it ? 'Identificatore della registrazione:' : 'Registration identifier:'} <code>{candidate.registration_id}</code></p>
+              <p>{it ? 'Ambito dichiarato: sistema' : 'Reported scope: machine'}</p>
+            </details>
           </li>
         {/each}
       </ul>
