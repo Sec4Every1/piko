@@ -4,6 +4,7 @@ mod key_recovery;
 mod key_worker;
 pub(super) use key_recovery::recover_service_keys;
 mod archive_verification;
+mod browser_inventory;
 pub(super) use archive_verification::{archive_capabilities, verify_service_archive};
 mod image_files;
 mod image_repetition;
@@ -914,7 +915,10 @@ async fn serve(
     let deadline = Instant::now()
         + if matches!(&request.command, Command::VerifyStore) {
             Duration::from_secs(30)
-        } else if request.command.is_response_command() || request.command.is_key_command() {
+        } else if request.command.is_response_command()
+            || request.command.is_key_command()
+            || matches!(&request.command, Command::GetBrowserInventory)
+        {
             Duration::from_millis(2200)
         } else {
             REQUEST_DEADLINE
@@ -930,6 +934,7 @@ async fn serve(
             Err(api_error("response_unauthorized", &error.to_string()))
         } else {
             match request.command {
+                Command::GetBrowserInventory => browser_inventory::collect().await,
                 Command::GetObservations => observations
                     .borrow()
                     .clone()

@@ -45,6 +45,7 @@ pub enum Command {
         expected_sha256: String,
     },
     GetHealth,
+    GetBrowserInventory,
     GetArchiveMaintenance,
     GetEvidenceKeyStatus,
     BeginKeyBackup,
@@ -123,6 +124,7 @@ pub enum ApiData {
     ResponseStatus(piko_security_core::ResponseStatus),
     Action(piko_security_core::Action),
     Health(HealthSnapshot),
+    BrowserInventory(piko_security_core::browser_inventory::BrowserInventory),
     ArchiveMaintenance(piko_event_storage::ArchiveMaintenanceStatus),
     EvidenceKeyStatus(EvidenceKeyStatus),
     KeyBackupTicket(KeyBackupTicket),
@@ -269,6 +271,29 @@ mod tests {
             assert_eq!(result.err().map(|e| e.kind()), Some(io::ErrorKind::InvalidData));
             Ok(())
         })
+    }
+
+    #[test]
+    fn browser_inventory_command_and_response_remain_read_only_and_unknown() -> io::Result<()> {
+        let command: Command = serde_json::from_str(r#"{"action":"get_browser_inventory"}"#)
+            .map_err(io::Error::other)?;
+        assert!(matches!(command, Command::GetBrowserInventory));
+        assert!(!command.is_response_mutation());
+        assert!(serde_json::from_str::<Command>(
+            r#"{"action":"get_browser_inventory","filter":{"scope":"user"}}"#
+        )
+        .is_err());
+        let inventory = piko_security_core::browser_inventory::from_registrations([], false);
+        let encoded =
+            serde_json::to_vec(&ApiData::BrowserInventory(inventory)).map_err(io::Error::other)?;
+        let decoded: ApiData = serde_json::from_slice(&encoded).map_err(io::Error::other)?;
+        let ApiData::BrowserInventory(snapshot) = decoded else {
+            return Err(io::Error::other("wrong response type"));
+        };
+        assert!(!snapshot.registration_scan_complete && !snapshot.browser_discovery_complete);
+        assert!(!snapshot.profiles_known && !snapshot.executable_identity_verified);
+        assert!(!snapshot.protection_status_known);
+        Ok(())
     }
 
     #[test]

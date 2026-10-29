@@ -75,6 +75,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         ApiData::Action(value) => serde_json::to_string_pretty(&value)?,
         ApiData::ResponseStatus(value) => serde_json::to_string_pretty(&value)?,
         ApiData::Health(value) => serde_json::to_string_pretty(&value)?,
+        ApiData::BrowserInventory(value) => serde_json::to_string_pretty(&value)?,
         ApiData::ArchiveMaintenance(value) => serde_json::to_string_pretty(&value)?,
         ApiData::EvidenceKeyStatus(value) => serde_json::to_string_pretty(&value)?,
         ApiData::KeyBackupTicket(_)

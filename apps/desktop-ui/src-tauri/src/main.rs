@@ -35,6 +35,18 @@ use signature::executable_signature;
 use startup::{set_startup, startup_status};
 
 #[tauri::command]
+async fn browser_inventory(
+) -> Result<piko_security_core::browser_inventory::BrowserInventory, String> {
+    match piko_ipc::call(Command::GetBrowserInventory)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        ApiData::BrowserInventory(inventory) => Ok(inventory),
+        _ => Err("unexpected IPC response type".into()),
+    }
+}
+
+#[tauri::command]
 async fn get_health() -> Result<HealthSnapshot, String> {
     match piko_ipc::call(Command::GetHealth)
         .await
@@ -164,6 +176,7 @@ fn main() -> std::process::ExitCode {
         .manage(RestrictedState::default())
         .manage(SandboxController::default())
         .invoke_handler(tauri::generate_handler![
+            browser_inventory,
             advisory_status,
             evidence_key_status,
             begin_evidence_key_backup,

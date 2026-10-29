@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod assessment;
+pub mod browser_inventory;
 mod authentication;
 mod identity_activity;
 pub use authentication::{

@@ -8,6 +8,8 @@
   import Dashboard from './lib/Dashboard.svelte';
   import Guide from './lib/Guide.svelte';
   import Capabilities from './lib/Capabilities.svelte';
+  import BrowserInventory from './lib/BrowserInventory.svelte';
+  import { loadBrowserInventory } from './lib/browserInventory';
   import Activity from './lib/Activity.svelte';
   import QueryBuilder from './lib/QueryBuilder.svelte';
   import Investigation from './lib/Investigation.svelte';
@@ -257,6 +259,7 @@
         <Activity {language} bind:this={activityPanel} onEvent={showEvent} onNetwork={(path) => { networkPath = path; navigate('capabilities'); }} />
       {:else if page === 'capabilities'}
         <Capabilities {language} initialPath={networkPath} bind:this={capabilitiesPanel} />
+        <BrowserInventory {language} load={loadBrowserInventory} />
       {:else if page === 'guide'}
         <Guide {language} onNavigate={navigate} />
       {:else if page === 'securityLog'}
