@@ -117,16 +117,29 @@ pub fn inventory(include_user: bool) -> io::Result<InventorySnapshot> {
             .cmp(&b.display_name.to_lowercase())
             .then_with(|| a.id.cmp(&b.id))
     });
-    // Enumeration is not atomic. If keys move while being read, expose one
-    // registration once without treating its display name as an identity.
-    let mut seen = std::collections::HashSet::new();
-    snapshot
-        .entries
-        .retain(|entry| seen.insert(entry.id.clone()));
+    snapshot.deduplicate();
     Ok(snapshot)
 }
 
 impl InventorySnapshot {
+    fn deduplicate(&mut self) {
+        // Enumeration is not atomic. A repeated identity can indicate that keys
+        // moved during the scan, so another registration may have been missed.
+        let mut seen = std::collections::HashSet::new();
+        let mut duplicate = false;
+        self.entries.retain(|entry| {
+            if seen.insert(entry.id.clone()) {
+                true
+            } else {
+                duplicate = true;
+                false
+            }
+        });
+        if duplicate {
+            self.warn("A registry registration appeared more than once during enumeration; the inventory is partial.".into());
+        }
+    }
+
     fn warn(&mut self, warning: String) {
         self.complete = false;
         if self.warnings.len() < MAX_WARNINGS {
@@ -425,6 +438,38 @@ mod tests {
             .is_some_and(|warning| warning.contains("omitted")));
         snapshot.truncate("Metadata budget exceeded".into());
         assert!(snapshot.truncated);
+    }
+
+    #[test]
+    fn duplicate_registration_marks_enumeration_partial() {
+        let entry = InstalledSoftware {
+            id: "registry:machine:64:synthetic".into(),
+            display_name: "Synthetic app".into(),
+            publisher: None,
+            version: None,
+            install_location: None,
+            install_date: None,
+            display_icon: None,
+            scope: "machine".into(),
+            registry_view: "64".into(),
+            source: SOURCE.into(),
+            uninstall_key: "synthetic".into(),
+        };
+        let mut snapshot = InventorySnapshot {
+            entries: vec![entry.clone()],
+            complete: true,
+            truncated: false,
+            warnings: Vec::new(),
+        };
+        snapshot.deduplicate();
+        assert!(snapshot.complete);
+        assert!(snapshot.warnings.is_empty());
+        snapshot.entries.push(entry);
+        snapshot.deduplicate();
+        assert_eq!(snapshot.entries.len(), 1);
+        assert!(!snapshot.complete);
+        assert!(!snapshot.truncated);
+        assert_eq!(snapshot.warnings.len(), 1);
     }
 
     #[test]
